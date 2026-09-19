@@ -7,3 +7,7 @@
 # 运行时本地覆盖
 deploy/.env
 deploy/.env.local
+
+# Python 字节码
+__pycache__/
+*.pyc
