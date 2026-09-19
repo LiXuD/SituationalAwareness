@@ -1,0 +1,12 @@
+# 展示层：统一检索入口（静态页，浏览器直连 OpenSearch 9200 查询）
+services:
+  ui:
+    image: nginx:1.27-alpine
+    container_name: ssp-ui
+    volumes:
+      - ../../ui:/usr/share/nginx/html:ro
+    ports:
+      - "8088:80"
+    depends_on:
+      - opensearch
+    networks: [ssp]

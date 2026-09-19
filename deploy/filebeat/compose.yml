@@ -1,0 +1,12 @@
+# 采集层：Filebeat 探针日志投递（仅搬运，不改字段）
+services:
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.23
+    container_name: ssp-filebeat
+    user: root
+    command: ["filebeat", "-e", "-strict.perms=false"]
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ../../logs:/var/log/probes:ro
+    depends_on: [logstash]
+    networks: [ssp]

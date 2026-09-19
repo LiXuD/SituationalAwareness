@@ -1,0 +1,26 @@
+# 一体化安全态势感知平台 —— POC 单机编排入口（x86 私有化）
+#
+# 结构：每服务一文件 + include 聚合
+#   - 每个服务独立目录（deploy/<服务>/compose.yml），改动互不冲突，便于多任务并行开发
+#   - 公共网络 ssp 与数据卷 os-data 在根文件统一定义
+#
+# 用法：
+#   cd deploy && docker compose up -d
+#   ../scripts/apply-ecs-template.sh      # 下发 ECS 索引模板
+#   ../scripts/verify-ingest.sh           # 校验探针事件是否入湖
+name: ssp-poc
+
+include:
+  - opensearch/compose.yml
+  - dashboards/compose.yml
+  - logstash/compose.yml
+  - filebeat/compose.yml
+  - ui/compose.yml
+  # - arkime/compose.yml      # I-02 补全项 #10：Arkime 部署落地后启用
+
+networks:
+  ssp:
+    driver: bridge
+
+volumes:
+  os-data:

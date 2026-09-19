@@ -35,7 +35,11 @@ Arkime（全流量 PCAP）── 直连同一 OpenSearch 集群（存储层接�
 ## 4. 目录结构
 ```
 deploy/
-  docker-compose.yml          # POC 单机编排：OpenSearch / Dashboards / Logstash / Filebeat
+  compose.yml                 # POC 编排入口：include 聚合各服务，统一定义 network(ssp)/volume(os-data)
+  opensearch/compose.yml      # 数据层：OpenSearch 单节点
+  dashboards/compose.yml      # 展示层：OpenSearch Dashboards
+  logstash/compose.yml        # 数据层：Logstash 归一管道
+  filebeat/compose.yml        # 采集层：Filebeat 投递
   filebeat/filebeat.yml       # 采集投递配置（三个 input）
 config/
   logstash/pipelines.yml      # 单管线，加载 conf.d

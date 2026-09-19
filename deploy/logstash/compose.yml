@@ -1,0 +1,16 @@
+# 数据层：Logstash ECS 归一管道
+services:
+  logstash:
+    # 该镜像内置 logstash-output-opensearch 插件，无需额外安装
+    # 若该 tag 不可用，可改用 :7.16.2 或基于 logstash-oss 自行安装 opensearch 输出插件
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:7.16.3
+    container_name: ssp-logstash
+    volumes:
+      - ../../config/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ../../config/logstash/conf.d:/usr/share/logstash/pipeline/conf.d:ro
+    ports:
+      - "5044:5044"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks: [ssp]
