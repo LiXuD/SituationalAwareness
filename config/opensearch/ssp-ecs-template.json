@@ -2,6 +2,9 @@
   "index_patterns": ["ssp-*"],
   "priority": 100,
   "template": {
+    "aliases": {
+      "ssp-events": {}
+    },
     "settings": {
       "number_of_shards": 1,
       "number_of_replicas": 0,
@@ -44,42 +47,56 @@
         },
         "host": {
           "properties": {
-            "name": { "type": "keyword" },
+            "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
             "ip":   { "type": "ip" }
           }
         },
         "rule": {
           "properties": {
             "id":          { "type": "keyword" },
-            "name":        { "type": "keyword" },
-            "category":    { "type": "keyword" },
-            "description": { "type": "text" }
+            "name":        { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "category":    { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "description": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 } } }
           }
         },
         "dns": {
           "properties": {
-            "question": { "properties": { "name": { "type": "keyword" } } }
+            "question": {
+              "properties": {
+                "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+              }
+            }
           }
         },
         "url": {
           "properties": {
-            "domain": { "type": "keyword" },
-            "full":   { "type": "keyword" }
+            "domain": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "full":   { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 } } }
           }
         },
         "tls": {
           "properties": {
-            "client": { "properties": { "server_name": { "type": "keyword" } } }
+            "client": {
+              "properties": {
+                "server_name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+              }
+            }
           }
         },
         "file": {
           "properties": {
-            "name": { "type": "keyword" },
-            "hash": { "properties": { "sha256": { "type": "keyword" } } }
+            "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "hash": {
+              "properties": {
+                "sha256": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 128 } } }
+              }
+            }
           }
         },
         "observer": {
-          "properties": { "name": { "type": "keyword" } }
+          "properties": {
+            "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+          }
         },
         "log": {
           "properties": { "original": { "type": "text" } }

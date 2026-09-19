@@ -15,6 +15,11 @@ services:
       - DISABLE_SECURITY_PLUGIN=true        # POC 简化：关闭安全插件；生产必须开启并启用 TLS+鉴权
       - DISABLE_INSTALL_DEMO_CONFIG=true
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      # 允许统一检索页（浏览器直连 9200）跨域查询；POC 全放开，生产需收紧
+      - http.cors.enabled=true
+      - http.cors.allow-origin=*
+      - http.cors.allow-methods=OPTIONS,HEAD,GET,POST,PUT,DELETE
+      - http.cors.allow-headers=X-Requested-With,Content-Type,Content-Length
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -66,6 +71,18 @@ services:
       - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ../logs:/var/log/probes:ro
     depends_on: [logstash]
+    networks: [ssp]
+
+  # 统一检索入口（静态页，浏览器直连 OpenSearch 9200 查询）
+  ui:
+    image: nginx:1.27-alpine
+    container_name: ssp-ui
+    volumes:
+      - ../ui:/usr/share/nginx/html:ro
+    ports:
+      - "8088:80"
+    depends_on:
+      - opensearch
     networks: [ssp]
 
 volumes:
