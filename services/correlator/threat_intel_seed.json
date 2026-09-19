@@ -1,0 +1,33 @@
+{
+  "_comment": "I-04 本地种子威胁情报（POC）。生产改为对接真实 MISP：设 MISP_URL/MISP_API_KEY 即可，本文件作为离线兜底。",
+  "indicators": [
+    {
+      "type": "ip-dst",
+      "value": "203.0.113.45",
+      "provider": "POC-Seed",
+      "confidence": "high",
+      "tags": ["c2", "apt-demo", "ssh-bruteforce"]
+    },
+    {
+      "type": "domain",
+      "value": "evil-c2.example.com",
+      "provider": "POC-Seed",
+      "confidence": "high",
+      "tags": ["c2", "dns-tunnel"]
+    },
+    {
+      "type": "domain",
+      "value": "malware-download.example.net",
+      "provider": "POC-Seed",
+      "confidence": "medium",
+      "tags": ["malware-delivery"]
+    },
+    {
+      "type": "sha256",
+      "value": "9f2a7c1e5b3d4f60a1c8e2d7b9f0431a6c5e8d2b7f1a3c9e4d6b8f0a2c5e7d19",
+      "provider": "POC-Seed",
+      "confidence": "high",
+      "tags": ["trojan", "payload"]
+    }
+  ]
+}

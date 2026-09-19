@@ -82,6 +82,9 @@
             "matched": { "type": "boolean" },
             "enabled": { "type": "boolean" },
             "error":   { "type": "text" },
+            "source":           { "type": "keyword" },
+            "misp_configured":  { "type": "boolean" },
+            "misp_unreachable": { "type": "boolean" },
             "indicator": {
               "properties": {
                 "type":       { "type": "keyword" },

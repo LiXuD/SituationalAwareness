@@ -16,6 +16,12 @@ services:
       - CORR_INTERVAL_SECONDS=60               # 后台周期关联（0=仅手动触发）
       - CORR_EGRESS_THRESHOLD=3                # R-005 外联聚合阈值
       - ALLOWED_SOURCES=suricata,zeek,wazuh    # 事件来源白名单（防自反馈）
+      # I-04 威胁情报：默认只用本地种子情报；填 MISP_URL + MISP_API_KEY 即切到真实 MISP
+      - THREAT_TIMEOUT=3                       # 情报查询超时（秒）
+      - THREAT_CACHE_TTL=300                   # 查询结果缓存（秒）
+      - THREAT_SEED_FILE=${THREAT_SEED_FILE:-}
+      - MISP_URL=${MISP_URL:-}
+      - MISP_API_KEY=${MISP_API_KEY:-}
       - CORS_ALLOW_ORIGIN=*
     volumes:
       # 服务代码（只读）：services/correlator -> /srv

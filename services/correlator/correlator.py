@@ -387,6 +387,8 @@ def rule_r003_malware_download(events):
                 "rule_id": "R-003", "grade": grade,
                 "entity_key": f"{src}|{dst}|{str(sha)[:12] if sha else fname}",
                 "source_ip": src, "dest_ip": dst,
+                "domains": [str(domain).lower()] if domain else [],
+                "hashes": [str(sha).lower()] if sha else [],
                 "internal_ips": [src] if not is_external(src) else [],
                 "log_sources": ["suricata"],
                 "event_ids": _ev_ids([e]), "event_count": 1,
@@ -484,6 +486,7 @@ def rule_r007_c2_dns(events):
                 "rule_id": "R-007", "grade": RULE_BY_ID["R-007"]["base_grade"],
                 "entity_key": str(qname).lower(),
                 "source_ip": src, "dest_ip": dst,
+                "domains": [str(qname).lower()],
                 "internal_ips": [src] if src and not is_external(src) else [],
                 "log_sources": [get_in(e, "fields.log_source")],
                 "event_ids": _ev_ids([e]), "event_count": 1,
@@ -767,11 +770,14 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self):
         path = self.path.split("?")[0]
         if path in ("/health", "/"):
-            latest, total = latest_event_ts()
+            _latest, total = latest_event_ts()
+            ti = load_threat_intel()
+            ti_status = ti.status() if (ti is not None and hasattr(ti, "status")) else None
             self._send(200, {"status": "ok", "index": ALERTS_INDEX,
                              "events_alias": EVENTS_ALIAS, "events_total": total,
                              "interval_seconds": CORR_INTERVAL,
-                             "threat_intel": load_threat_intel() is not None})
+                             "threat_intel": ti is not None,
+                             "threat_intel_status": ti_status})
             return
         if path == "/rules":
             self._send(200, {"rules": RULES, "sla_seconds": GRADE_SLA_SECONDS})
