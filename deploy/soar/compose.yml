@@ -1,0 +1,37 @@
+# I-05 Shuffle SOAR 剧本 + 人工审批拉黑
+# 落黑点：本机 iptables（经宿主 netns 自定义链 SSP_BLACKLIST）
+# 相对路径以本文件所在目录为基准：deploy/soar
+services:
+  soar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ssp-soar:latest
+    container_name: ssp-soar
+    command: python3 /srv/soar_server.py
+    # 需要进入宿主(VM)网络命名空间执行 iptables：pid=host + privileged
+    pid: host
+    privileged: true
+    environment:
+      - OS_URL=http://opensearch:9200
+      - ALERTS_INDEX=ssp-alerts
+      - DRAFTS_INDEX=ssp-soar-drafts
+      - LISTEN_HOST=0.0.0.0
+      - LISTEN_PORT=8092
+      - SOAR_BLOCK_GRADES=P0            # 达到该级别自动生成拉黑草稿（绝不自动提交）
+      - SOAR_INTERVAL_SECONDS=60        # 周期剧本；0=仅手动
+      - BLOCKER_MODE=${BLOCKER_MODE:-iptables}   # iptables | dry-run（演练）
+      - SSP_CHAIN=${SSP_CHAIN:-SSP_BLACKLIST}    # 自定义链
+      - SSP_HOOK_CHAIN=${SSP_HOOK_CHAIN:-DOCKER-USER}  # 从该链挂跳转
+      - SSP_HOST_PID=1                  # 宿主 netns 的 PID
+      - SSP_BLOCK_DIRECTION=src         # src=封来源
+      - CORS_ALLOW_ORIGIN=*
+    volumes:
+      # 服务代码（只读）：services/soar -> /srv
+      - ../../services/soar:/srv:ro
+    ports:
+      - "8092:8092"
+    depends_on:
+      - opensearch
+    networks: [ssp]
+    restart: unless-stopped

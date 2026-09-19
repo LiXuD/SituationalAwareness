@@ -1,0 +1,49 @@
+{
+  "index_patterns": ["ssp-soar-drafts"],
+  "priority": 300,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.refresh_interval": "1s"
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "draft_id":    { "type": "keyword" },
+        "alert_id":    { "type": "keyword" },
+        "rule_id":     { "type": "keyword" },
+        "rule_name":   { "type": "keyword" },
+        "grade":       { "type": "keyword" },
+        "target_ip":   { "type": "ip" },
+        "direction":   { "type": "keyword" },
+        "status":      { "type": "keyword" },
+        "reason":      { "type": "text" },
+        "impact":      { "type": "text" },
+        "threat": {
+          "properties": {
+            "matched":  { "type": "boolean" },
+            "source":   { "type": "keyword" },
+            "value":    { "type": "keyword" },
+            "tags":     { "type": "keyword" }
+          }
+        },
+        "created_at":  { "type": "date" },
+        "decided_at":  { "type": "date" },
+        "decided_by":  { "type": "keyword" },
+        "executed_at": { "type": "date" },
+        "block_backend": { "type": "keyword" },
+        "block_rule":    { "type": "keyword" },
+        "block_error":   { "type": "text" },
+        "history": {
+          "properties": {
+            "at":       { "type": "date" },
+            "actor":    { "type": "keyword" },
+            "action":   { "type": "keyword" },
+            "detail":   { "type": "text" }
+          }
+        }
+      }
+    }
+  }
+}
