@@ -11,3 +11,16 @@ deploy/.env.local
 # Python 字节码
 __pycache__/
 *.pyc
+
+# GeoIP 地理库（构建产物，由 scripts/fetch-geoip.sh 下载，不入库）
+*.mmdb
+*.mmdb.gz
+config/logstash/geoip/*
+!config/logstash/geoip/.gitkeep
+
+# 演示数据回放暂存区（由 scripts/replay-demo.sh 填充；源数据集 logs/demo/ 正常入库）
+logs/demo-stage/**/*.json
+logs/demo-stage/**/*.log
+
+# 地图底图生成器的数据缓存（Natural Earth 源数据）
+scripts/.cache/

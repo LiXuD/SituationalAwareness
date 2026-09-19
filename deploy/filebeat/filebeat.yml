@@ -26,6 +26,41 @@ filebeat.inputs:
     fields:
       log_source: wazuh
 
+# ---------------------------------------------------------------------------
+# 演示数据集回放（I-07/I-08）
+# 源数据集在 logs/demo/（真实公网 IP、可地理定位），但**不直接采集**；
+# 由 scripts/replay-demo.sh 复制到暂存区 logs/demo-stage/ 后才被采集，
+# 使"回放"成为一个显式动作，生产链路保持只吃真实探针日志。
+# 演示事件带 fields.demo="true" 标记，便于 scripts/reset-demo.sh 精准清理。
+# ---------------------------------------------------------------------------
+  - type: filestream
+    id: demo-suricata
+    enabled: true
+    paths:
+      - /var/log/probes/demo-stage/suricata/*.json
+    fields:
+      log_source: suricata
+      demo: "true"
+
+  - type: filestream
+    id: demo-zeek
+    enabled: true
+    paths:
+      - /var/log/probes/demo-stage/zeek/*.log
+    exclude_lines: ['^#']
+    fields:
+      log_source: zeek
+      demo: "true"
+
+  - type: filestream
+    id: demo-wazuh
+    enabled: true
+    paths:
+      - /var/log/probes/demo-stage/wazuh/*.json
+    fields:
+      log_source: wazuh
+      demo: "true"
+
 # 注：Arkime 不走此管道——它以全流量存储为主，直接写入同一个 OpenSearch 集群（见技术方案 §5）
 
 processors:

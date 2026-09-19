@@ -15,6 +15,9 @@ services:
       - CORR_WINDOW_MINUTES=30                 # 关联窗口
       - CORR_INTERVAL_SECONDS=60               # 后台周期关联（0=仅手动触发）
       - CORR_EGRESS_THRESHOLD=3                # R-005 外联聚合阈值
+      # 分级 SLA 阈值（秒）。PRD §12：P0 秒级 / P1 1 分钟 / P2 10 分钟 / P3 30 分钟。
+      # POC 把"秒级"量化为可测的 30 秒——否则 P0 截止时刻＝生成时刻，任何响应都必然超时。
+      - 'CORR_SLA_SECONDS={"P0":30,"P1":60,"P2":600,"P3":1800}'
       - ALLOWED_SOURCES=suricata,zeek,wazuh    # 事件来源白名单（防自反馈）
       # I-04 威胁情报：默认只用本地种子情报；填 MISP_URL + MISP_API_KEY 即切到真实 MISP
       - THREAT_TIMEOUT=3                       # 情报查询超时（秒）

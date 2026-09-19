@@ -1,0 +1,6 @@
+{
+  "width": 1000.0,
+  "height": 500.0,
+  "projection": "equirectangular",
+  "source": "Natural Earth 1:110m land (public domain)"
+}

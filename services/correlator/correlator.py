@@ -83,7 +83,18 @@ def is_benign_external(ip):
 
 # ----------------------------- 分级模型（PRD §12） -----------------------------
 GRADE_ORDER = ["P0", "P1", "P2", "P3"]           # 小号 = 更紧急
-GRADE_SLA_SECONDS = {"P0": 0, "P1": 60, "P2": 600, "P3": 1800}
+# SLA 阈值（秒）。PRD §12 口径：P0 秒级 / P1 1 分钟 / P2 10 分钟 / P3 30 分钟。
+# POC 把"秒级"量化为**可测**的 30 秒（保留"秒级"标签）——否则 P0 的截止时刻等于生成时刻，
+# 任何人工/自动响应都"必然超时"，SLA 指标失去意义。可用 env 覆盖：
+#   CORR_SLA_SECONDS='{"P0":30,"P1":60,"P2":600,"P3":1800}'
+_DEFAULT_SLA = {"P0": 30, "P1": 60, "P2": 600, "P3": 1800}
+try:
+    GRADE_SLA_SECONDS = {k: int(v) for k, v in {
+        **_DEFAULT_SLA,
+        **json.loads(os.environ.get("CORR_SLA_SECONDS", "") or "{}"),
+    }.items()}
+except Exception:
+    GRADE_SLA_SECONDS = dict(_DEFAULT_SLA)
 GRADE_SLA_LABEL = {"P0": "秒级", "P1": "1 分钟", "P2": "10 分钟", "P3": "30 分钟"}
 GRADE_SEVERITY = {"P0": "critical", "P1": "high", "P2": "medium", "P3": "low"}
 GRADE_RISK = {"P0": 90, "P1": 70, "P2": 50, "P3": 30}
@@ -385,7 +396,7 @@ def rule_r003_malware_download(events):
                 reason.append(f"恶意域名={domain}")
             alerts.append({
                 "rule_id": "R-003", "grade": grade,
-                "entity_key": f"{src}|{dst}|{str(sha)[:12] if sha else fname}",
+                "entity_key": f"{src}|{dst}|{str(sha)[:12] if sha else (fname or domain or 'unknown')}",
                 "source_ip": src, "dest_ip": dst,
                 "domains": [str(domain).lower()] if domain else [],
                 "hashes": [str(sha).lower()] if sha else [],
@@ -437,6 +448,7 @@ def rule_r005_egress(events):
                 "rule_id": "R-005", "grade": RULE_BY_ID["R-005"]["base_grade"],
                 "entity_key": src,
                 "source_ip": src, "dest_ip": None,
+                "external_ips": sorted(d["dsts"]),
                 "internal_ips": [src],
                 "log_sources": sorted({get_in(e, "fields.log_source") for e in d["events"]}),
                 "event_ids": _ev_ids(d["events"]), "event_count": len(d["events"]),
@@ -521,7 +533,30 @@ def apply_escalation(grade, internal_ips, assets, threat_hit):
     return grade, factors
 
 
-def build_alert(evt, window, assets, threat_mod):
+def geo_index(events):
+    """构建 {IP: geo} 索引：从已地理富化的探针事件中抽取"源/目的"两侧坐标。
+
+    事件由 I-01 的 Logstash 管道富化（ECS: source.geo.location / destination.geo.location）。
+    仅收录"外网且非白名单"的地址 —— 私有/保留地址本就查不到坐标，显式过滤可避免把
+    8.8.8.8 这类良性对端误标到攻击地图上（PRD §8 攻击地图口径：按源 IP 地理定位聚合告警；
+    对"恶意载荷下载"这类源为内网、目的为外网的事件，用目的侧坐标标注攻击者位置）。
+    """
+    m = {}
+
+    def _put(ip, geo):
+        if not ip or not isinstance(geo, dict) or not geo.get("location"):
+            return
+        if not (is_external(ip) and not is_benign_external(ip)):
+            return
+        m.setdefault(ip, geo)
+
+    for e in events:
+        _put(get_in(e, "source.ip"), get_in(e, "source.geo"))
+        _put(get_in(e, "destination.ip"), get_in(e, "destination.geo"))
+    return m
+
+
+def build_alert(evt, window, assets, threat_mod, geo_map=None):
     rule = RULE_BY_ID[evt["rule_id"]]
     internal_ips = evt.get("internal_ips") or []
     # 威胁情报比对（I-04）；缺失则标记"情报未匹配"
@@ -539,6 +574,20 @@ def build_alert(evt, window, assets, threat_mod):
     sla = GRADE_SLA_SECONDS[grade]
     due = gen + datetime.timedelta(seconds=sla)
     _id = alert_doc_id(evt["rule_id"], evt["entity_key"])
+    # I-07：把地理富化结果透传进告警（态势大屏"攻击地图"按外网侧坐标聚合）
+    src_obj = {"ip": evt.get("source_ip")}
+    if geo_map and evt.get("source_ip") and geo_map.get(evt["source_ip"]):
+        src_obj["geo"] = geo_map[evt["source_ip"]]
+    dst_obj = {"ip": evt.get("dest_ip")}
+    if geo_map and evt.get("dest_ip") and geo_map.get(evt["dest_ip"]):
+        dst_obj["geo"] = geo_map[evt["dest_ip"]]
+    # I-07：汇总本告警涉及的全部"外网侧"地理点（源/目的 + 规则携带的外网 IP），
+    # 供态势大屏"攻击地图"标注攻击者位置（如 R-005 外联聚合的多个目的 IP）。
+    ext_ips = []
+    for _ip in ([evt.get("source_ip"), evt.get("dest_ip")] + list(evt.get("external_ips") or [])):
+        if _ip and is_external(_ip) and not is_benign_external(_ip) and _ip not in ext_ips:
+            ext_ips.append(_ip)
+    geo_points = [{"ip": ip, "geo": (geo_map or {})[ip]} for ip in ext_ips if (geo_map or {}).get(ip)]
     asset_hit = None
     for ip in internal_ips:
         if ip in assets:
@@ -566,14 +615,14 @@ def build_alert(evt, window, assets, threat_mod):
             "window_start": iso(window[0]), "window_end": iso(window[1]),
             "escalation_factors": factors,
         }},
-        "source": {"ip": evt.get("source_ip")},
-        "destination": {"ip": evt.get("dest_ip")},
+        "source": src_obj,
+        "destination": dst_obj,
         "related": {
             "log_sources": evt.get("log_sources", []),
             "event_count": evt.get("event_count", 0),
             "event_ids": evt.get("event_ids", []),
-            "entities": {"internal_ips": internal_ips,
-                         "external_ips": [evt["source_ip"]] if evt.get("source_ip") else []},
+            "entities": {"internal_ips": internal_ips, "external_ips": ext_ips},
+            "geo_points": geo_points,
         },
         "threat": threat,
         "asset": asset_hit,
@@ -616,6 +665,9 @@ def upsert_alerts(alert_docs):
             na["resolved_at"] = pa.get("resolved_at")
             na["response_action"] = pa.get("response_action")
             na["ticket_id"] = pa.get("ticket_id")
+            # 生成/截止时刻必须"钉住"：SLA 从告警首次生成计时，重复关联不得重置时钟
+            na["generated_at"] = pa.get("generated_at", na["generated_at"])
+            na["due_at"] = pa.get("due_at", na["due_at"])
             # 合并统计
             na["last_seen_at"] = doc["ssp"]["alert"]["generated_at"]
             na["event_count"] = max(doc["related"]["event_count"], get_in(prev, "related.event_count", 0))
@@ -673,6 +725,7 @@ def run_correlation(window_minutes=None, anchor_iso=None):
     assets = lookup_assets(sorted(internal_ips))
 
     threat_mod = load_threat_intel()
+    geo_map = geo_index(events)   # I-07：外网 IP → 地理富化
 
     candidates = []
     rule_counts = {}
@@ -689,7 +742,7 @@ def run_correlation(window_minutes=None, anchor_iso=None):
 
     alert_docs = []
     for c in candidates:
-        alert_docs.append(build_alert(c, window, assets, threat_mod))
+        alert_docs.append(build_alert(c, window, assets, threat_mod, geo_map))
 
     write_res = upsert_alerts(alert_docs)
     return {
@@ -700,6 +753,7 @@ def run_correlation(window_minutes=None, anchor_iso=None):
         "events_by_source": {s: sum(1 for e in events if get_in(e, "fields.log_source") == s)
                              for s in ALLOWED_SOURCES},
         "assets_matched": len(assets),
+        "external_ips_geolocated": len(geo_map),
         "threat_intel_enabled": threat_mod is not None,
         "rule_hits": rule_counts,
         "rule_errors": rule_errors,

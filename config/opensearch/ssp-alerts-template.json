@@ -56,12 +56,37 @@
         "source": {
           "properties": {
             "ip":  { "type": "ip" },
-            "geo": { "type": "geo_point" }
+            "geo": {
+              "properties": {
+                "location":         { "type": "geo_point" },
+                "continent_code":   { "type": "keyword" },
+                "continent_name":   { "type": "keyword" },
+                "country_iso_code": { "type": "keyword" },
+                "country_name":     { "type": "keyword" },
+                "region_iso_code":  { "type": "keyword" },
+                "region_name":      { "type": "keyword" },
+                "city_name":        { "type": "keyword" },
+                "timezone":         { "type": "keyword" }
+              }
+            }
           }
         },
         "destination": {
           "properties": {
-            "ip": { "type": "ip" }
+            "ip": { "type": "ip" },
+            "geo": {
+              "properties": {
+                "location":         { "type": "geo_point" },
+                "continent_code":   { "type": "keyword" },
+                "continent_name":   { "type": "keyword" },
+                "country_iso_code": { "type": "keyword" },
+                "country_name":     { "type": "keyword" },
+                "region_iso_code":  { "type": "keyword" },
+                "region_name":      { "type": "keyword" },
+                "city_name":        { "type": "keyword" },
+                "timezone":         { "type": "keyword" }
+              }
+            }
           }
         },
         "related": {
@@ -73,6 +98,24 @@
               "properties": {
                 "internal_ips": { "type": "ip" },
                 "external_ips": { "type": "ip" }
+              }
+            },
+            "geo_points": {
+              "properties": {
+                "ip": { "type": "ip" },
+                "geo": {
+                  "properties": {
+                    "location":         { "type": "geo_point" },
+                    "continent_code":   { "type": "keyword" },
+                    "continent_name":   { "type": "keyword" },
+                    "country_iso_code": { "type": "keyword" },
+                    "country_name":     { "type": "keyword" },
+                    "region_iso_code":  { "type": "keyword" },
+                    "region_name":      { "type": "keyword" },
+                    "city_name":        { "type": "keyword" },
+                    "timezone":         { "type": "keyword" }
+                  }
+                }
               }
             }
           }

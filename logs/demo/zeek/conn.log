@@ -1,0 +1,14 @@
+#separator \x09
+#set_separator	,
+#empty_field	(empty)
+#unset_field	-
+#path	conn
+#open	2026-09-19-03-02-00
+#fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	proto	service	duration	orig_bytes	resp_bytes	conn_state
+#types	time	string	addr	port	addr	port	enum	string	interval	count	count	string
+{"ts": 1789786932.0, "uid": "D1demo0000", "id.orig_h": "45.155.205.233", "id.orig_p": 44122, "id.resp_h": "10.0.0.20", "id.resp_p": 22, "proto": "tcp", "service": "ssh", "duration": 120.4, "orig_bytes": 4096, "resp_bytes": 8192, "conn_state": "SF"}
+{"ts": 1789787070.0, "uid": "D1demo0001", "id.orig_h": "10.0.0.31", "id.orig_p": 54001, "id.resp_h": "14.225.5.10", "id.resp_p": 443, "proto": "tcp", "service": "ssl", "duration": 3.2, "orig_bytes": 1024, "resp_bytes": 6144, "conn_state": "SF"}
+{"ts": 1789787081.0, "uid": "D1demo0002", "id.orig_h": "10.0.0.31", "id.orig_p": 54002, "id.resp_h": "103.145.13.7", "id.resp_p": 8080, "proto": "tcp", "service": "http", "duration": 1.8, "orig_bytes": 512, "resp_bytes": 2048, "conn_state": "SF"}
+{"ts": 1789787092.0, "uid": "D1demo0003", "id.orig_h": "10.0.0.31", "id.orig_p": 54003, "id.resp_h": "221.194.47.219", "id.resp_p": 443, "proto": "tcp", "service": "ssl", "duration": 2.4, "orig_bytes": 768, "resp_bytes": 4096, "conn_state": "SF"}
+{"ts": 1789787230.0, "uid": "D1demo0004", "id.orig_h": "10.0.0.31", "id.orig_p": 54010, "id.resp_h": "91.240.118.168", "id.resp_p": 443, "proto": "tcp", "service": "ssl", "duration": 45.7, "orig_bytes": 2048, "resp_bytes": 10240, "conn_state": "SF"}
+{"ts": 1789787345.0, "uid": "D1demo0005", "id.orig_h": "45.155.205.233", "id.orig_p": 44130, "id.resp_h": "10.20.30.40", "id.resp_p": 3306, "proto": "tcp", "service": "mysql", "duration": 8.1, "orig_bytes": 1536, "resp_bytes": 3072, "conn_state": "SF"}

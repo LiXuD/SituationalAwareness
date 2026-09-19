@@ -8,6 +8,8 @@ services:
     volumes:
       - ../../config/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
       - ../../config/logstash/conf.d:/usr/share/logstash/pipeline/conf.d:ro
+      # GeoIP 地理库（DB-IP Lite City，由 scripts/fetch-geoip.sh 下载；构建产物不入库）
+      - ../../config/logstash/geoip:/usr/share/logstash/geoip:ro
     ports:
       - "5044:5044"
     depends_on:
