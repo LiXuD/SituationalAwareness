@@ -1,0 +1,76 @@
+# I-01 采集与归一 —— POC 单机编排（x86 私有化）
+# 用法：
+#   cd deploy && docker compose up -d
+#   ../scripts/apply-ecs-template.sh      # 下发 ECS 索引模板
+#   ../scripts/verify-ingest.sh           # 校验四类探针事件是否入湖
+name: ssp-poc
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: ssp-opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - DISABLE_SECURITY_PLUGIN=true        # POC 简化：关闭安全插件；生产必须开启并启用 TLS+鉴权
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - os-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+    networks: [ssp]
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: ssp-dashboards
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks: [ssp]
+
+  logstash:
+    # 该镜像内置 logstash-output-opensearch 插件，无需额外安装
+    # 若该 tag 不可用，可改用 :7.16.2 或基于 logstash-oss 自行安装 opensearch 输出插件
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:7.16.3
+    container_name: ssp-logstash
+    volumes:
+      - ../config/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ../config/logstash/conf.d:/usr/share/logstash/pipeline/conf.d:ro
+    ports:
+      - "5044:5044"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks: [ssp]
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.23
+    container_name: ssp-filebeat
+    user: root
+    command: ["filebeat", "-e", "-strict.perms=false"]
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ../logs:/var/log/probes:ro
+    depends_on: [logstash]
+    networks: [ssp]
+
+volumes:
+  os-data:
+
+networks:
+  ssp:
+    driver: bridge

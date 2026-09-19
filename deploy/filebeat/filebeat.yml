@@ -1,0 +1,39 @@
+# Filebeat —— 只负责"投递"，不做 ECS 归一（归一统一交给 Logstash）
+# 每个探针的原始日志通过 fields.log_source 打标，Logstash 据此分流与映射。
+filebeat.inputs:
+  - type: filestream
+    id: suricata-eve
+    enabled: true
+    paths:
+      - /var/log/probes/suricata/eve.json
+    fields:
+      log_source: suricata
+
+  - type: filestream
+    id: zeek-logs
+    enabled: true
+    paths:
+      - /var/log/probes/zeek/*.log
+    exclude_lines: ['^#']            # 跳过 Zeek 的 #separator/#set_separator/#fields 等头部行
+    fields:
+      log_source: zeek
+
+  - type: filestream
+    id: wazuh-alerts
+    enabled: true
+    paths:
+      - /var/log/probes/wazuh/alerts.json
+    fields:
+      log_source: wazuh
+
+# 注：Arkime 不走此管道——它以全流量存储为主，直接写入同一个 OpenSearch 集群（见技术方案 §5）
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+
+output.logstash:
+  hosts: ["logstash:5044"]
+
+logging.level: info
+logging.to_files: false

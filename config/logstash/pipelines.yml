@@ -1,0 +1,5 @@
+# Logstash 单管线：按文件名顺序加载 conf.d 下的配置（00-inputs → 10/20/30 归一 → 99-output）
+- pipeline.id: ssp-ingest
+  path.config: "/usr/share/logstash/pipeline/conf.d"
+  pipeline.workers: 2
+  pipeline.batch.size: 125

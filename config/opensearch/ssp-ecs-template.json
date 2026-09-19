@@ -1,0 +1,90 @@
+{
+  "index_patterns": ["ssp-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.mapping.total_fields.limit": 3000,
+      "index.refresh_interval": "5s"
+    },
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event": {
+          "properties": {
+            "kind":     { "type": "keyword" },
+            "category": { "type": "keyword" },
+            "type":     { "type": "keyword" },
+            "module":   { "type": "keyword" },
+            "dataset":  { "type": "keyword" },
+            "severity": { "type": "keyword" }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip":   { "type": "ip" },
+            "port": { "type": "long" },
+            "geo":  { "type": "geo_point" }
+          }
+        },
+        "destination": {
+          "properties": {
+            "ip":   { "type": "ip" },
+            "port": { "type": "long" }
+          }
+        },
+        "network": {
+          "properties": {
+            "transport": { "type": "keyword" },
+            "protocol":  { "type": "keyword" },
+            "bytes":     { "type": "long" }
+          }
+        },
+        "host": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "ip":   { "type": "ip" }
+          }
+        },
+        "rule": {
+          "properties": {
+            "id":          { "type": "keyword" },
+            "name":        { "type": "keyword" },
+            "category":    { "type": "keyword" },
+            "description": { "type": "text" }
+          }
+        },
+        "dns": {
+          "properties": {
+            "question": { "properties": { "name": { "type": "keyword" } } }
+          }
+        },
+        "url": {
+          "properties": {
+            "domain": { "type": "keyword" },
+            "full":   { "type": "keyword" }
+          }
+        },
+        "tls": {
+          "properties": {
+            "client": { "properties": { "server_name": { "type": "keyword" } } }
+          }
+        },
+        "file": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "hash": { "properties": { "sha256": { "type": "keyword" } } }
+          }
+        },
+        "observer": {
+          "properties": { "name": { "type": "keyword" } }
+        },
+        "log": {
+          "properties": { "original": { "type": "text" } }
+        }
+      }
+    }
+  }
+}
