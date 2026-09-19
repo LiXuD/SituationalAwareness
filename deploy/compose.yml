@@ -16,7 +16,8 @@ include:
   - logstash/compose.yml
   - filebeat/compose.yml
   - ui/compose.yml
-  # - arkime/compose.yml      # I-02 补全项 #10：Arkime 部署落地后启用
+  - asset/compose.yml
+  - arkime/compose.yml
 
 networks:
   ssp:

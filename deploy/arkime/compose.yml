@@ -1,0 +1,49 @@
+# 流量层：Arkime（全流量会话存储 + PCAP 回溯）—— I-02 补全项 #10 / F-06 / R-06
+#
+# 设计（docs/I-02 §2.6）：
+#   - 直连同一 OpenSearch 集群（http://opensearch:9200），不走 Logstash
+#   - 会话元数据写 arkime_sessions3-*；PCAP 落独立卷 arkime-pcap
+#   - Viewer 映射宿主机 8005；init 由 scripts/arkime-init.sh 显式、可重跑地执行
+#   - 引入方式：在 deploy/compose.yml 的 include 中取消注释 - arkime/compose.yml
+#
+# 镜像注意（ghcr.io/arkime/arkime/arkime:v5.8.1）：
+#   - 该镜像没有 ENTRYPOINT，必须显式用 command 调 /opt/arkime/bin/docker.sh <viewer|capture|db.pl ...>
+#   - 容器内无 curl（仅有 wget），故 healthcheck 用 wget
+#   - 多架构镜像：x86 私有化环境 pull 同 tag 会解析为 amd64
+#
+# 相对路径基准：本文件所在目录（deploy/arkime/），跨级引用用 ../../
+services:
+  arkime:
+    image: ghcr.io/arkime/arkime/arkime:v5.8.1
+    container_name: ssp-arkime
+    # 镜像无 ENTRYPOINT，显式启动 Viewer（持久）；pcap 通过 scripts/arkime-import.sh 用 capture -r 回放
+    command: ["/opt/arkime/bin/docker.sh", "viewer"]
+    volumes:
+      # config 以本文件目录为基准：../../ = 工程根
+      - ../../config/arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      # PCAP 存储（独立卷，与 os-data 分离）
+      - arkime-pcap:/opt/arkime/pcap
+      # 样本 pcap 供 capture -r 回放（只读）
+      - ../../samples/pcap:/pcap:ro
+    ports:
+      - "8005:8005"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks: [ssp]
+    healthcheck:
+      # 镜像内无 curl，用 busybox wget 探测 Viewer。Viewer 要求 digest 鉴权，
+      # 未带凭据时返回 401；此时 wget 退出码是 6（认证失败），不是 8。
+      # 实测 busybox wget 在收到 401 时的退出码是 **6（认证失败）**，不是 8，故必须一并放行。
+      # 注意 $$：Compose 会在解析期插值 $VAR（否则报 'The "c" variable is not set'），
+      # 必须写成 $$c 才会把字面的 $c 传给容器内 shell。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8005/ ; c=$$? ; [ $$c -eq 0 ] || [ $$c -eq 6 ] || [ $$c -eq 8 ]"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+# PCAP 独立数据卷（声明在本文件内，不污染根 compose.yml）
+volumes:
+  arkime-pcap:

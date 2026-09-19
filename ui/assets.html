@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>统一资产库 · 一体化安全态势感知平台</title>
+<style>
+  :root{--bg:#0f1420;--panel:#171d2b;--panel2:#1e2536;--line:#2a3346;--txt:#e6ebf5;--mut:#8b97ad;--acc:#3b82f6;--alert:#ef4444;--ok:#22c55e;--warn:#f59e0b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .links{margin-left:auto;display:flex;gap:12px;font-size:12px}
+  header a{color:var(--mut);text-decoration:none}header a:hover{color:var(--acc)}
+  .wrap{padding:16px 20px;display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
+  input,select,button{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:13px}
+  button{background:var(--acc);border-color:var(--acc);color:#fff;cursor:pointer;font-weight:600;margin-top:12px}
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:var(--panel2);border-color:var(--line);color:var(--txt);font-weight:500}
+  button.danger{background:var(--alert);border-color:var(--alert)}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px}
+  .pill b{color:var(--acc)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+  th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  tbody tr{cursor:pointer}tbody tr:hover{background:var(--panel2)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;border:1px solid var(--line);color:var(--mut)}
+  .tag.core{color:#fff;background:var(--alert);border-color:var(--alert)}
+  .tag.important{color:#1e2536;background:var(--warn);border-color:var(--warn)}
+  .tag.normal{color:#fff;background:#3b82f6;border-color:#3b82f6}
+  .risk{font-weight:700}
+  .risk.hi{color:var(--alert)}.risk.mid{color:var(--warn)}.risk.lo{color:var(--ok)}
+  .muted{color:var(--mut)}
+  .empty{color:var(--mut);padding:24px;text-align:center}
+  .err{color:var(--alert)}
+  .ok{color:var(--ok)}
+  #errbox{margin-top:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;max-height:220px;overflow:auto;display:none}
+  #errbox .row{color:var(--alert);padding:2px 0;border-bottom:1px solid var(--line)}
+  #msg{margin-top:10px;font-size:12px}
+  .row-actions button{width:auto;margin:0 4px 0 0;padding:3px 8px;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡 统一资产库 · 一体化安全态势感知平台</h1>
+  <div class="links">
+    <a href="http://localhost:8088/">统一检索</a>
+    <a href="http://localhost:5601" target="_blank">OpenSearch Dashboards</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h3 style="margin:0 0 4px">新增 / 编辑资产</h3>
+    <div class="muted" style="font-size:11px">手工录入（含 重要度 / 风险评分，供大屏热力着色）</div>
+    <input id="f_id" placeholder="资产编号（留空自动生成，编辑时必填）" style="margin-top:10px"/>
+    <label>资产名称 *</label><input id="f_name"/>
+    <label>IP 地址 *</label><input id="f_ip" placeholder="如 10.20.30.40"/>
+    <label>资产类型</label>
+    <select id="f_type">
+      <option>服务器</option><option>网络设备</option><option>安全设备</option>
+      <option>终端设备</option><option>应用系统</option><option>数据库</option><option>其他</option>
+    </select>
+    <label>重要度 *</label>
+    <select id="f_imp"><option>核心</option><option>重要</option><option>一般</option></select>
+    <label>风险评分 (0-100) *</label><input id="f_risk" placeholder="0-100"/>
+    <label>责任人</label><input id="f_owner"/>
+    <label>所属部门</label><input id="f_dept"/>
+    <label>位置/机房</label><input id="f_loc"/>
+    <label>操作系统</label><input id="f_os"/>
+    <label>标签（逗号分隔）</label><input id="f_tags"/>
+    <label>备注</label><input id="f_desc"/>
+    <button id="save">保存资产</button>
+    <button id="reset" class="ghost">清空</button>
+
+    <hr style="border-color:var(--line);margin:14px 0"/>
+    <h3 style="margin:0 0 4px">Excel 批量导入</h3>
+    <input id="file" type="file" accept=".xlsx"/>
+    <button id="imp" class="ghost">导入 Excel</button>
+    <button id="tpl" class="ghost">下载模板</button>
+    <div id="errbox"></div>
+  </div>
+
+  <div>
+    <div class="stats" id="stats"><span class="pill muted">加载中…</span></div>
+    <div class="card" style="padding:0">
+      <table>
+        <thead><tr><th>编号</th><th>名称</th><th>IP</th><th>类型</th><th>重要度</th><th>风险</th><th>责任人</th><th>部门</th><th>操作</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="9" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+    <div class="stats" style="margin-top:12px">
+      <span class="pill muted">检索目标：别名 <b>ssp-assets</b>（资产独立域，非日志事件）</span>
+    </div>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:8090";
+const $ = id => document.getElementById(id);
+
+function impBadge(v){return v==="核心"?"core":v==="重要"?"important":v==="一般"?"normal":"";}
+function riskCls(v){v=+v;return v>=80?"hi":v>=50?"mid":"lo";}
+function setMsg(t, ok){$("msg").innerHTML = `<span class="${ok?"ok":"err"}">${t}</span>`;}
+function showErrs(errs){
+  const box=$("errbox");
+  if(!errs||!errs.length){box.style.display="none";return;}
+  box.style.display="block";
+  box.innerHTML = `<div class="muted">导入被回滚，以下为错误行（任一非法即整批拒绝，未写入任何文档）：</div>` +
+    errs.map(e=>`<div class="row">第 ${e.row} 行 · ${e.field}：${e.reason}</div>`).join("");
+}
+
+async function load(){
+  const q=$("f_name").value?"":""; // 占位，避免误用
+  try{
+    const res = await fetch(API+"/api/assets?size=200", {headers:{"Content-Type":"application/json"}});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||JSON.stringify(data));
+    const items=data.items||[];
+    const byImp={核心:0,重要:0,一般:0};
+    items.forEach(it=>{if(byImp[it.importance]!=null)byImp[it.importance]++;});
+    $("stats").innerHTML =
+      `<span class="pill">资产总数 <b>${data.total}</b></span>`+
+      `<span class="pill">核心 <b>${byImp["核心"]}</b></span>`+
+      `<span class="pill">重要 <b>${byImp["重要"]}</b></span>`+
+      `<span class="pill">一般 <b>${byImp["一般"]}</b></span>`;
+    $("rows").innerHTML = items.length? items.map(it=>`
+      <tr onclick='edit("${it.asset_id}")'>
+        <td>${it.asset_id||"-"}</td>
+        <td>${it.name||"-"}</td>
+        <td>${it.ip||"-"}</td>
+        <td><span class="tag">${it.asset_type||"-"}</span></td>
+        <td><span class="tag ${impBadge(it.importance)}">${it.importance||"-"}</span></td>
+        <td class="risk ${riskCls(it.risk_score)}">${it.risk_score??"-"}</td>
+        <td>${it.owner||"-"}</td>
+        <td>${it.department||"-"}</td>
+        <td class="row-actions">
+          <button class="ghost" onclick="event.stopPropagation();edit('${it.asset_id}')">编辑</button>
+          <button class="danger" onclick="event.stopPropagation();del('${it.asset_id}')">删除</button>
+        </td>
+      </tr>`).join("") : '<tr><td colspan="9" class="empty">暂无资产，请先新增或导入</td></tr>';
+  }catch(e){
+    $("stats").innerHTML=`<span class="pill err">加载失败：${e.message}</span>`;
+  }
+}
+
+async function save(){
+  const id=$("f_id").value.trim();
+  const body={
+    asset_id:id, name:$("f_name").value.trim(), ip:$("f_ip").value.trim(),
+    asset_type:$("f_type").value, importance:$("f_imp").value, risk_score:$("f_risk").value,
+    owner:$("f_owner").value.trim(), department:$("f_dept").value.trim(),
+    location:$("f_loc").value.trim(), os:$("f_os").value.trim(),
+    tags:$("f_tags").value.trim(), description:$("f_desc").value.trim()
+  };
+  if(!body.name||!body.ip||!body.risk_score){setMsg("请填写 名称 / IP / 风险评分",false);return;}
+  const isEdit = !!id;
+  try{
+    const res = await fetch(API+"/api/assets"+(isEdit?"/"+encodeURIComponent(id):""),
+      {method:isEdit?"PUT":"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok){ showErrs(data.errors); setMsg("保存失败："+(data.error||""),false); return; }
+    setMsg("已"+(isEdit?"更新":"新增")+"资产 "+data.asset_id,true);
+    showErrs([]); resetForm(); load();
+  }catch(e){ setMsg("请求失败："+e.message,false); }
+}
+
+async function del(id){
+  if(!confirm("确认删除资产 "+id+"？")) return;
+  try{
+    const res=await fetch(API+"/api/assets/"+encodeURIComponent(id),{method:"DELETE"});
+    const data=await res.json();
+    setMsg(data.ok?"已删除 "+id:"删除失败："+(data.error||""), data.ok);
+    load();
+  }catch(e){ setMsg("请求失败："+e.message,false); }
+}
+
+async function edit(id){
+  try{
+    const res=await fetch(API+"/api/assets",{headers:{"Content-Type":"application/json"}});
+    const data=await res.json();
+    const it=(data.items||[]).find(x=>x.asset_id===id);
+    if(!it) return;
+    $("f_id").value=it.asset_id||""; $("f_name").value=it.name||""; $("f_ip").value=it.ip||"";
+    $("f_type").value=it.asset_type||"其他"; $("f_imp").value=it.importance||"一般";
+    $("f_risk").value=it.risk_score??""; $("f_owner").value=it.owner||""; $("f_dept").value=it.department||"";
+    $("f_loc").value=it.location||""; $("f_os").value=it.os||""; $("f_tags").value=(it.tags||[]).join(",");
+    $("f_desc").value=it.description||"";
+    setMsg("编辑模式：修改后点「保存资产」（将 PUT /api/assets/"+id+"）",true);
+  }catch(e){ setMsg("加载失败："+e.message,false); }
+}
+
+async function importXlsx(){
+  const f=$("file").files[0];
+  if(!f){setMsg("请先选择 xlsx 文件",false);return;}
+  const fd=new FormData(); fd.append("file", f);
+  setMsg("导入中…",true); showErrs([]);
+  try{
+    const res=await fetch(API+"/api/assets/import",{method:"POST",body:fd});
+    const data=await res.json();
+    if(!res.ok || !data.ok){ showErrs(data.errors); setMsg("导入被回滚："+(data.error||""),false); }
+    else { setMsg("导入成功，新增 "+data.imported+" 条",true); showErrs([]); load(); }
+  }catch(e){ setMsg("请求失败："+e.message,false); }
+}
+
+function downloadTpl(){
+  window.open(API+"/api/assets/template.xlsx","_blank");
+}
+function resetForm(){
+  ["f_id","f_name","f_ip","f_risk","f_owner","f_dept","f_loc","f_os","f_tags","f_desc"].forEach(i=>$(i).value="");
+  $("f_type").value="服务器"; $("f_imp").value="核心";
+}
+
+$("save").onclick=save;
+$("reset").onclick=()=>{resetForm();setMsg("",true);};
+$("imp").onclick=importXlsx;
+$("tpl").onclick=downloadTpl;
+load();
+</script>
+</body>
+</html>
