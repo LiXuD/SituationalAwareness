@@ -1,0 +1,28 @@
+# I-03 轻量关联分析 —— 关联引擎（纯标准库 Python，零第三方依赖）
+# 相对路径以本文件所在目录为基准：deploy/correlator
+services:
+  correlator:
+    image: python:3.12-slim
+    container_name: ssp-correlator
+    command: python3 /srv/correlator.py
+    environment:
+      - OS_URL=http://opensearch:9200          # 同一 OpenSearch 集群
+      - EVENTS_ALIAS=ssp-events                # 输入：统一检索别名（仅探针事件）
+      - ALERTS_INDEX=ssp-alerts                # 输出：分级告警索引（独立，不进 ssp-events）
+      - ASSET_ALIAS=ssp-assets                 # 资产富化来源
+      - LISTEN_HOST=0.0.0.0
+      - LISTEN_PORT=8091
+      - CORR_WINDOW_MINUTES=30                 # 关联窗口
+      - CORR_INTERVAL_SECONDS=60               # 后台周期关联（0=仅手动触发）
+      - CORR_EGRESS_THRESHOLD=3                # R-005 外联聚合阈值
+      - ALLOWED_SOURCES=suricata,zeek,wazuh    # 事件来源白名单（防自反馈）
+      - CORS_ALLOW_ORIGIN=*
+    volumes:
+      # 服务代码（只读）：services/correlator -> /srv
+      - ../../services/correlator:/srv:ro
+    ports:
+      - "8091:8091"
+    depends_on:
+      - opensearch
+    networks: [ssp]
+    restart: unless-stopped

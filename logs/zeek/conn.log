@@ -6,6 +6,6 @@
 #open	2026-09-19-11-20-00
 #fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	proto	service	duration	orig_bytes	resp_bytes	conn_state
 #types	time	string	addr	port	addr	port	enum	string	interval	count	count	string
-{"ts":1789818001.123456,"uid":"C1a2b3c4d5","id.orig_h":"10.0.0.31","id.orig_p":54601,"id.resp_h":"198.51.100.77","id.resp_p":80,"proto":"tcp","service":"http","duration":0.512,"orig_bytes":1024,"resp_bytes":204800,"conn_state":"SF"}
-{"ts":1789818012.654321,"uid":"C1a2b3c4d6","id.orig_h":"10.0.0.31","id.orig_p":54602,"id.resp_h":"8.8.8.8","id.resp_p":53,"proto":"udp","service":"dns","duration":0.033,"orig_bytes":64,"resp_bytes":128,"conn_state":"SF"}
-{"ts":1789818025.778899,"uid":"C1a2b3c4d7","id.orig_h":"10.0.0.31","id.orig_p":54603,"id.resp_h":"203.0.113.45","id.resp_p":443,"proto":"tcp","service":"ssl","duration":12.4,"orig_bytes":3072,"resp_bytes":51200,"conn_state":"SF"}
+{"ts":1789788001.123456,"uid":"C1a2b3c4d5","id.orig_h":"10.0.0.31","id.orig_p":54601,"id.resp_h":"198.51.100.77","id.resp_p":80,"proto":"tcp","service":"http","duration":0.512,"orig_bytes":1024,"resp_bytes":204800,"conn_state":"SF"}
+{"ts":1789788012.654321,"uid":"C1a2b3c4d6","id.orig_h":"10.0.0.31","id.orig_p":54602,"id.resp_h":"8.8.8.8","id.resp_p":53,"proto":"udp","service":"dns","duration":0.033,"orig_bytes":64,"resp_bytes":128,"conn_state":"SF"}
+{"ts":1789788025.778899,"uid":"C1a2b3c4d7","id.orig_h":"10.0.0.31","id.orig_p":54603,"id.resp_h":"203.0.113.45","id.resp_p":443,"proto":"tcp","service":"ssl","duration":12.4,"orig_bytes":3072,"resp_bytes":51200,"conn_state":"SF"}

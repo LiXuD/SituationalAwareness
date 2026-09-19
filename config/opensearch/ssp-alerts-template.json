@@ -1,0 +1,123 @@
+{
+  "index_patterns": ["ssp-alerts"],
+  "priority": 300,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.refresh_interval": "1s"
+    },
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event": {
+          "properties": {
+            "kind":      { "type": "keyword" },
+            "category":  { "type": "keyword" },
+            "module":    { "type": "keyword" },
+            "severity":  { "type": "keyword" },
+            "risk_score":{ "type": "integer" }
+          }
+        },
+        "rule": {
+          "properties": {
+            "id":          { "type": "keyword" },
+            "name":        { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "description": { "type": "text" }
+          }
+        },
+        "ssp": {
+          "properties": {
+            "alert": {
+              "properties": {
+                "id":               { "type": "keyword" },
+                "rule_id":          { "type": "keyword" },
+                "rule_name":        { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+                "grade":            { "type": "keyword" },
+                "grade_label":      { "type": "keyword" },
+                "sla_seconds":      { "type": "integer" },
+                "sla_label":        { "type": "keyword" },
+                "status":           { "type": "keyword" },
+                "generated_at":     { "type": "date" },
+                "due_at":           { "type": "date" },
+                "first_seen_at":    { "type": "date" },
+                "last_seen_at":     { "type": "date" },
+                "resolved_at":      { "type": "date" },
+                "response_action":  { "type": "keyword" },
+                "ticket_id":        { "type": "keyword" },
+                "window_start":     { "type": "date" },
+                "window_end":       { "type": "date" },
+                "escalation_factors": { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip":  { "type": "ip" },
+            "geo": { "type": "geo_point" }
+          }
+        },
+        "destination": {
+          "properties": {
+            "ip": { "type": "ip" }
+          }
+        },
+        "related": {
+          "properties": {
+            "log_sources": { "type": "keyword" },
+            "event_count": { "type": "integer" },
+            "event_ids":   { "type": "keyword" },
+            "entities": {
+              "properties": {
+                "internal_ips": { "type": "ip" },
+                "external_ips": { "type": "ip" }
+              }
+            }
+          }
+        },
+        "threat": {
+          "properties": {
+            "matched": { "type": "boolean" },
+            "enabled": { "type": "boolean" },
+            "error":   { "type": "text" },
+            "indicator": {
+              "properties": {
+                "type":       { "type": "keyword" },
+                "value":      { "type": "keyword" },
+                "provider":   { "type": "keyword" },
+                "confidence": { "type": "keyword" },
+                "first_seen": { "type": "date" },
+                "last_seen":  { "type": "date" },
+                "tags":       { "type": "keyword" }
+              }
+            },
+            "indicators": {
+              "properties": {
+                "type":       { "type": "keyword" },
+                "value":      { "type": "keyword" },
+                "provider":   { "type": "keyword" },
+                "confidence": { "type": "keyword" },
+                "first_seen": { "type": "date" },
+                "last_seen":  { "type": "date" },
+                "tags":       { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "asset": {
+          "properties": {
+            "ip":               { "type": "ip" },
+            "name":             { "type": "keyword" },
+            "importance":       { "type": "keyword" },
+            "importance_score": { "type": "integer" },
+            "risk_score":       { "type": "integer" }
+          }
+        },
+        "message": { "type": "text" },
+        "tags":    { "type": "keyword" }
+      }
+    }
+  }
+}

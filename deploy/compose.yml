@@ -18,6 +18,7 @@ include:
   - ui/compose.yml
   - asset/compose.yml
   - arkime/compose.yml
+  - correlator/compose.yml
 
 networks:
   ssp:

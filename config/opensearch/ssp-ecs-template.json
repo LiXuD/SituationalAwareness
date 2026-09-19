@@ -1,5 +1,5 @@
 {
-  "index_patterns": ["ssp-*"],
+  "index_patterns": ["ssp-suricata-*", "ssp-zeek-*", "ssp-wazuh-*"],
   "priority": 100,
   "template": {
     "aliases": {
@@ -15,6 +15,11 @@
       "dynamic": true,
       "properties": {
         "@timestamp": { "type": "date" },
+        "fields": {
+          "properties": {
+            "log_source": { "type": "keyword" }
+          }
+        },
         "event": {
           "properties": {
             "kind":     { "type": "keyword" },
