@@ -212,7 +212,8 @@ CREATE TABLE IF NOT EXISTS soar_drafts (
     updated_at    INTEGER NOT NULL,
     approver      TEXT NOT NULL DEFAULT '',
     decided_at    INTEGER,
-    fail_reason   TEXT NOT NULL DEFAULT ''
+    fail_reason   TEXT NOT NULL DEFAULT '',
+    payload       TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS blacklist (

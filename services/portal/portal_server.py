@@ -47,6 +47,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import db
 import assets
+import soar
 
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
@@ -422,6 +423,68 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     st, obj = 404, {"error": "not found"}
                 self._json(st, obj)
+                return
+
+        # ---- SOAR 拉黑审批（落业务库，替代 soar_server 透传）----
+        if path.startswith("/api/soar/soar"):
+            sub = path[len("/api/soar"):]  # 例如 /soar/drafts、/soar/blocks
+            soar_write = sess["role"] in WRITE_ROLES["soar"]
+            if sub in ("/soar/drafts",) and not write:
+                st, obj = soar.list_drafts(q.get("status"), int(q.get("limit", "100") or "100"))
+                self._json(st, obj)
+                return
+            if sub == "/soar/blocks" and not write:
+                self._json(200, soar.list_blocks())
+                return
+            if sub == "/soar/rules" and not write:
+                self._json(200, {"block_grades": soar.BLOCK_GRADES, "auto_execute": False,
+                                 "note": "达到级别的告警自动生成草稿；提交封禁必须人工审批"})
+                return
+            if sub == "/soar/drafts/generate" and write:
+                if not soar_write:
+                    self._json(403, {"error": "当前角色无权执行该操作", "role": sess["role"],
+                                     "required": sorted(WRITE_ROLES["soar"])})
+                    return
+                obj = soar.generate_drafts()
+                self._audit(sess["username"], "POST", "/soar/drafts/generate", "新增草稿 %d" % obj.get("created_count", 0))
+                self._json(200, obj)
+                return
+            if sub.endswith("/approve") and write and sub.startswith("/soar/drafts/"):
+                if not soar_write:
+                    self._json(403, {"error": "当前角色无权执行该操作", "role": sess["role"],
+                                     "required": sorted(WRITE_ROLES["soar"])})
+                    return
+                b = self._json_body()
+                code, obj = soar.approve_draft(sub.split("/")[-2], b.get("operator"), bool(b.get("dry_run")))
+                if code == 200:
+                    self._audit(sess["username"], "approve", "/soar/drafts/" + sub.split("/")[-2], "")
+                self._json(code, obj)
+                return
+            if sub.endswith("/reject") and write and sub.startswith("/soar/drafts/"):
+                if not soar_write:
+                    self._json(403, {"error": "当前角色无权执行该操作", "role": sess["role"],
+                                     "required": sorted(WRITE_ROLES["soar"])})
+                    return
+                b = self._json_body()
+                code, obj = soar.reject_draft(sub.split("/")[-2], b.get("operator"))
+                if code == 200:
+                    self._audit(sess["username"], "reject", "/soar/drafts/" + sub.split("/")[-2], "")
+                self._json(code, obj)
+                return
+            if sub == "/soar/blocks/remove" and write:
+                if not soar_write:
+                    self._json(403, {"error": "当前角色无权执行该操作", "role": sess["role"],
+                                     "required": sorted(WRITE_ROLES["soar"])})
+                    return
+                b = self._json_body()
+                code, obj = soar.unblock(b.get("ip"), b.get("operator"))
+                if code == 200:
+                    self._audit(sess["username"], "unblock", "/soar/blocks/remove", b.get("ip", ""))
+                self._json(code, obj)
+                return
+            if sub.startswith("/soar/drafts/") and not write:
+                d = soar.get_draft(sub.split("/")[-1])
+                self._json(200 if d else 404, d or {"error": "not found"})
                 return
 
         # ---- 通用透传 + 授权 ----
