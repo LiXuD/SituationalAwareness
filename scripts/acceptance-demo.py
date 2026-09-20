@@ -25,7 +25,7 @@ import argparse
 import json
 import os
 import re
-import http.cookiejar
+from http.cookiejar import CookieJar
 import ssl
 import sqlite3
 import subprocess
@@ -90,7 +90,7 @@ def es_doc(index, _id):
 
 def portal_login(username="admin", password="REDACTED-SSP-PWD"):
     """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
-    jar = http.cookiejar.CookieJar()
+    jar = CookieJar()
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPCookieProcessor(jar),
                                      urllib.request.HTTPSHandler(context=ssl.create_default_context()))
@@ -142,7 +142,7 @@ def rec(rid, name, ok, detail=""):
 def step_reset():
     print("\n▶ 复位：解除全部封禁 + 清理草稿", flush=True)
     st, blocks = http("GET", f"{SOAR}/soar/block/list")
-    ips = blocks.get("rules", []) if isinstance(blocks, dict) else []
+    ips = [r.get("ip") for r in blocks.get("rules", []) if isinstance(r, dict)] if isinstance(blocks, dict) else []
     for ip in ips:
         http("POST", f"{SOAR}/soar/block/remove", {"ip": ip})
     try:
@@ -304,7 +304,7 @@ def step_a7_approve_block():
     for _ in range(15):
         http("POST", f"{OS}/ssp-alerts/_refresh")
         st, blocks = http("GET", f"{SOAR}/soar/block/list")
-        blocked_ips = blocks.get("rules", []) if isinstance(blocks, dict) else []
+        blocked_ips = [r.get("ip") for r in blocks.get("rules", []) if isinstance(r, dict)] if isinstance(blocks, dict) else []
         al = es_doc("ssp-alerts", alert_id).get("ssp", {}).get("alert", {}) if alert_id else {}
         if ip in blocked_ips and al.get("status") == "blocked":
             break

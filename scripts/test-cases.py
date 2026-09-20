@@ -18,7 +18,7 @@ test-cases.py —— I-09 测试用例（反例/边界）执行器，纯标准�
 退出码：0=全部通过；1=有失败项。
 """
 import argparse
-import http.cookiejar
+from http.cookiejar import CookieJar
 import json
 import os
 import sqlite3
@@ -83,7 +83,7 @@ def es_count(index):
 
 def portal_login(username="admin", password="REDACTED-SSP-PWD"):
     """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
-    jar = http.cookiejar.CookieJar()
+    jar = CookieJar()
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPCookieProcessor(jar),
                                      urllib.request.HTTPSHandler(context=ssl.create_default_context()))
@@ -138,7 +138,7 @@ def clear_drafts():
 def ipt_ips():
     st, d = http("GET", f"{SOAR}/soar/block/list")
     if isinstance(d, dict):
-        return d.get("rules", [])
+        return [r.get("ip") for r in d.get("rules", []) if isinstance(r, dict)]
     return []
 
 
