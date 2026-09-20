@@ -1,0 +1,326 @@
+// 态势大屏 —— 平台内视图（ES 模块）
+import { apiPost, apiGet } from "../api.js";
+import { esc, fmtTs, parseGeo, proj } from "../utils.js";
+
+const ALERTS = "ssp-alerts";
+const ASSETS = "ssp-assets";
+const GRADES = ["P0", "P1", "P2", "P3"];
+const GCOLOR = { P0: "#ef4444", P1: "#f59e0b", P2: "#3b82f6", P3: "#64748b" };
+const GLABEL = { P0: "秒级", P1: "1 分钟", P2: "10 分钟", P3: "30 分钟" };
+const SLA_DEFAULT = { P0: 30, P1: 60, P2: 600, P3: 1800 };
+const W = 1000, H = 500;
+const RANGES = { "1h": "now-1h", "24h": "now-24h", "7d": "now-7d", "all": null };
+
+let timer = null, clock = null;
+
+export function mount(root) {
+  root.innerHTML = `
+  <div class="page page-dashboard">
+    <div class="ctrlbar">
+      <select id="range">
+        <option value="1h">最近 1 小时</option>
+        <option value="24h">最近 24 小时</option>
+        <option value="7d">最近 7 天</option>
+        <option value="all" selected>全部</option>
+      </select>
+      <span id="clock" class="mono"></span>
+      <span id="src-health" class="src-health" title="探针数据源健康（PRD §10：断连标记异常，不影响其它源）"></span>
+    </div>
+    <div class="kpis" id="kpis"><div class="kpi"><div class="lab">加载中…</div></div></div>
+    <div class="grid">
+      <section class="panel">
+        <h2><span class="no">①</span> 攻击地图 <span class="sub">按外网 IP 地理定位聚合告警（散点大小＝告警数）</span>
+          <span class="tag" id="map-tag"></span></h2>
+        <div class="mapwrap">
+          <svg id="map" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
+            <g id="grat"></g><g id="basemap"></g><g id="points"></g>
+          </svg>
+        </div>
+        <div class="maplegend" id="map-legend"></div>
+      </section>
+      <section class="panel">
+        <h2><span class="no">②</span> 告警 TOP <span class="sub">级别 / 规则 / 资产</span></h2>
+        <div id="top"></div>
+      </section>
+      <section class="panel">
+        <h2><span class="no">③</span> 资产热力 <span class="sub">重要度 × 风险评分</span>
+          <span class="tag" id="heat-tag"></span></h2>
+        <div class="heat" id="heat"></div>
+        <div class="note" id="heat-note"></div>
+      </section>
+      <section class="panel">
+        <h2><span class="no">④</span> SLA 达成率 <span class="sub">实际响应时延 ≤ 级别阈值</span></h2>
+        <div id="sla"></div>
+        <div class="note" id="sla-note"></div>
+      </section>
+    </div>
+  </div>`;
+
+  root.querySelector("#range").addEventListener("change", load);
+  load();
+  timer = setInterval(load, 15000);
+  clock = setInterval(tick, 1000);
+  tick();
+}
+
+export function unmount() {
+  if (timer) clearInterval(timer);
+  if (clock) clearInterval(clock);
+}
+
+async function q(index, body) { return apiPost(`/api/os/${index}/_search`, body); }
+
+function rangeFilter() {
+  const r = RANGES[document.getElementById("range").value];
+  return r ? [{ range: { "@timestamp": { gte: r } } }] : [];
+}
+
+function tick() {
+  document.getElementById("clock").textContent = new Date().toLocaleString("zh-CN", { hour12: false });
+}
+
+/* ② 告警 TOP */
+function renderTop(alerts) {
+  const byGrade = {}, byRule = {}, byAsset = {};
+  for (const a of alerts) {
+    const al = a.ssp && a.ssp.alert || {}, g = al.grade || "P3";
+    byGrade[g] = (byGrade[g] || 0) + 1;
+    const rk = al.rule_id || "?";
+    byRule[rk] = (byRule[rk] || 0) + 1;
+    const ak = (a.asset && a.asset.name) ||
+      ((a.related && a.related.entities && a.related.entities.internal_ips) || [])[0] || "—";
+    byAsset[ak] = (byAsset[ak] || 0) + 1;
+  }
+  const topN = (o, n) => Object.entries(o).sort((x, y) => y[1] - x[1]).slice(0, n);
+  const maxG = Math.max(1, ...Object.values(byGrade));
+  const maxR = Math.max(1, ...Object.values(byRule));
+
+  let h = '<div class="sec">按级别分布</div>';
+  h += GRADES.map(g => {
+    const v = byGrade[g] || 0;
+    return `<div class="row"><span class="k"><span class="dot" style="background:${GCOLOR[g]}"></span> ${g} <span class="mut">${GLABEL[g]}</span></span>
+      <span class="bar"><i style="width:${Math.round(v / maxG * 100)}%;background:${GCOLOR[g]}"></i></span>
+      <span class="n">${v}</span></div>`;
+  }).join("");
+
+  h += '<div class="sec">规则命中 TOP 5</div>';
+  h += (topN(byRule, 5).map(([k, v]) =>
+    `<div class="row"><span class="k" title="${esc(k)}">${esc(k)}</span>
+      <span class="bar"><i style="width:${Math.round(v / maxR * 100)}%;background:var(--acc)"></i></span>
+      <span class="n">${v}</span></div>`).join("") || '<div class="empty">—</div>');
+
+  h += '<div class="sec">受影响资产 TOP 5</div>';
+  h += (topN(byAsset, 5).map(([k, v]) =>
+    `<div class="row"><span class="k" title="${esc(k)}">${esc(k)}</span>
+      <span class="bar"><i style="width:${Math.round(v / maxR * 100)}%;background:var(--p1)"></i></span>
+      <span class="n">${v}</span></div>`).join("") || '<div class="empty">—</div>');
+  document.getElementById("top").innerHTML = h;
+}
+
+/* ③ 资产热力 */
+function riskColor(s) {
+  s = Math.max(0, Math.min(100, Number(s) || 0));
+  const hue = (1 - s / 100) * 120;
+  return `hsl(${hue},62%,${18 + s * 0.14}%)`;
+}
+function renderHeat(assets, alerts) {
+  const hit = {};
+  for (const a of alerts) {
+    const ip = (a.asset && a.asset.ip) ||
+      ((a.related && a.related.entities && a.related.entities.internal_ips) || [])[0];
+    if (ip) hit[ip] = (hit[ip] || 0) + 1;
+  }
+  const list = assets.slice().sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+  document.getElementById("heat-tag").textContent = `共 ${assets.length} 项`;
+  document.getElementById("heat").innerHTML = list.map(a => {
+    const core = a.importance === "核心";
+    const n = hit[a.ip] || 0;
+    return `<div class="cell ${core ? "core" : ""}" style="background:${riskColor(a.risk_score)}"
+        title="${esc(a.name)} · ${esc(a.ip)} · 重要度 ${esc(a.importance)} · 风险 ${esc(a.risk_score)} · 命中告警 ${n}">
+      <div class="nm">${esc(a.name)}</div>
+      <div class="ip">${esc(a.ip)}</div>
+      <div class="imp">${esc(a.importance)} · 风险 ${esc(a.risk_score)}${n ? ` · <b style="color:#fff">${n} 告警</b>` : ""}</div>
+    </div>`;
+  }).join("") || '<div class="empty">资产库为空</div>';
+  document.getElementById("heat-note").innerHTML =
+    '<span class="lg"><i class="dot" style="background:#ef4444"></i>高风险</span>' +
+    '<span class="lg"><i class="dot" style="background:#eab308"></i>中风险</span>' +
+    '<span class="lg"><i class="dot" style="background:#22c55e"></i>低风险</span>' +
+    '<span class="lg" style="color:#f59e0b">▢ 金色描边＝核心资产</span>。块内 "N 告警" 为该资产被命中告警数。';
+}
+
+/* ④ SLA */
+function slaOf(a, now) {
+  const al = (a.ssp && a.ssp.alert) || {};
+  const grade = al.grade || "P3";
+  const thr = (typeof al.sla_seconds === "number") ? al.sla_seconds : (SLA_DEFAULT[grade] || 1800);
+  const gen = new Date(al.generated_at || a["@timestamp"]).getTime();
+  const res = al.resolved_at ? new Date(al.resolved_at).getTime() : null;
+  let state, latency = null;
+  if (res) { latency = Math.round((res - gen) / 1000); state = latency <= thr ? "met" : "breached"; }
+  else {
+    const due = al.due_at ? new Date(al.due_at).getTime() : gen + thr * 1000;
+    state = now <= due ? "pending" : "breached";
+  }
+  return { grade, thr, state, latency, status: al.status || "open" };
+}
+function renderSla(alerts) {
+  const now = Date.now();
+  const agg = {};
+  GRADES.forEach(g => agg[g] = { total: 0, met: 0, breached: 0, pending: 0, resp: 0 });
+  for (const a of alerts) {
+    const s = slaOf(a, now);
+    const o = agg[s.grade] || (agg[s.grade] = { total: 0, met: 0, breached: 0, pending: 0, resp: 0 });
+    o.total++; o[s.state]++; if (s.latency !== null) o.resp++;
+  }
+  let met = 0, judged = 0;
+  GRADES.forEach(g => { met += agg[g].met; judged += agg[g].met + agg[g].breached; });
+  document.getElementById("sla-rate").textContent = judged ? Math.round(met / judged * 100) + "%" : "—";
+
+  let h = '<table class="sla"><thead><tr><th>级别</th><th>阈值</th><th>告警</th><th>已响应</th><th>达标</th><th>超时</th><th>待响应</th><th>达成率</th></tr></thead><tbody>';
+  h += GRADES.map(g => {
+    const o = agg[g];
+    const den = o.met + o.breached;
+    const rate = den ? Math.round(o.met / den * 100) : null;
+    const bar = rate === null ? '<span class="mut">—</span>'
+      : `<span style="display:inline-flex;align-items:center;gap:5px"><span class="bar" style="width:46px"><i style="width:${rate}%;background:${rate >= 80 ? "var(--ok)" : rate >= 50 ? "var(--p1)" : "var(--p0)"}"></i></span>${rate}%</span>`;
+    return `<tr><td><span class="dot" style="background:${GCOLOR[g]}"></span> ${g} <span class="mut">${GLABEL[g]}</span></td>
+      <td>${SLA_DEFAULT[g]}s</td><td>${o.total}</td><td>${o.resp}</td>
+      <td>${o.met}</td><td>${o.breached}</td><td>${o.pending}</td><td>${bar}</td></tr>`;
+  }).join("");
+  h += "</tbody></table>";
+  document.getElementById("sla").innerHTML = h;
+  document.getElementById("sla-note").innerHTML =
+    "达成率 = 达标 ÷（达标 + 超时）；「待响应」为尚未到截止时刻、不计入分母。<br>" +
+    "PRD §12 口径 P0 秒级 / P1 1 分钟 / P2 10 分钟 / P3 30 分钟；POC 把「秒级」量化为可测的 30 秒。";
+}
+
+/* ① 攻击地图 */
+async function loadBasemap() {
+  const g = document.getElementById("basemap");
+  if (g.dataset.loaded) return;
+  try {
+    const r = await fetch("assets/world-land.svg");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const svg = await r.text();
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    const p = doc.querySelector("path");
+    if (!p) throw new Error("no path");
+    g.appendChild(document.importNode(p, true));
+    g.dataset.loaded = "1";
+  } catch (e) {
+    console.warn("底图加载失败，退化为经纬网", e);
+    document.getElementById("grat").insertAdjacentHTML("afterbegin",
+      '<rect x="0" y="0" width="1000" height="500" fill="#141a28" stroke="#273147" stroke-width="1"/>');
+  }
+}
+function drawGraticule() {
+  const g = document.getElementById("grat");
+  let h = "";
+  for (let lon = -180; lon <= 180; lon += 30) { const [x] = proj(lon, 0); h += `<line class="grat" x1="${x}" y1="0" x2="${x}" y2="${H}"/>`; }
+  for (let lat = -60; lat <= 60; lat += 30) { const [, y] = proj(0, lat); h += `<line class="grat" x1="0" y1="${y}" x2="${W}" y2="${y}"/>`; }
+  g.innerHTML = h;
+}
+function renderMap(alerts) {
+  const pts = {};
+  const add = (ip, geoRaw, grade) => {
+    if (!ip || !geoRaw) return;
+    const loc = parseGeo(geoRaw);
+    if (!loc) return;
+    const o = pts[ip] || (pts[ip] = { ip, lat: loc.lat, lon: loc.lon, n: 0, grades: {}, country: "" });
+    o.n++; o.grades[grade] = (o.grades[grade] || 0) + 1;
+    o.country = geoRaw.country_name || geoRaw.country_iso_code || o.country || "";
+  };
+  for (const a of alerts) {
+    const grade = (a.ssp && a.ssp.alert && a.ssp.alert.grade) || "P3";
+    const gp = (a.related && a.related.geo_points) || [];
+    if (gp.length) { for (const p of gp) add(p.ip, p.geo, grade); }
+    else {
+      const s = a.source || {}, d = a.destination || {};
+      add(s.ip, s.geo, grade);
+      if (d.ip !== s.ip) add(d.ip, d.geo, grade);
+    }
+  }
+  const arr = Object.values(pts);
+  const maxN = Math.max(1, ...arr.map(p => p.n));
+  const g = document.getElementById("points");
+  g.innerHTML = arr.map(p => {
+    const [x, y] = proj(p.lon, p.lat);
+    const gs = GRADES.filter(k => p.grades[k]);
+    const worst = gs[0] || "P3";
+    const r = 4 + Math.round((p.n / maxN) * 7);
+    const tip = `${p.ip}${p.country ? " · " + esc(p.country) : ""} · ${p.n} 条告警（${gs.map(k => k + "×" + p.grades[k]).join(" ")}）`;
+    return `<g class="mk" style="cursor:pointer" onclick="location.hash='#/traffic?ip=${encodeURIComponent(p.ip)}'">
+      <title>${tip}——点击在平台内查看该 IP 的流量会话</title>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r + 5}" fill="${GCOLOR[worst]}" opacity="0.16"/>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${GCOLOR[worst]}" stroke="#fff" stroke-width=".8" opacity="0.95"/>
+    </g>`;
+  }).join("");
+  document.getElementById("map-tag").textContent = arr.length ? `${arr.length} 个外网 IP` : "无地理定位数据";
+  const byCountry = {};
+  arr.forEach(p => { const c = p.country || "未知"; byCountry[c] = (byCountry[c] || 0) + p.n; });
+  const top = Object.entries(byCountry).sort((a, b) => b[1] - a[1]);
+  document.getElementById("map-legend").innerHTML = top.length
+    ? "来源国家/地区：" + top.map(([c, n]) => `<b>${esc(c)}</b> ${n}`).join(" · ") + "　·　点击散点可在平台内查该 IP 流量"
+    : "暂无带地理坐标的告警（需 GeoIP 库 + 外网源 IP 事件）";
+}
+
+/* 主流程 */
+async function load() {
+  try {
+    const rf = rangeFilter();
+    const [alertsRes, assetsRes] = await Promise.all([
+      q(ALERTS, { size: 500, sort: [{ "@timestamp": "desc" }], query: { bool: { filter: rf } } }),
+      q(ASSETS, { size: 500, query: { match_all: {} } }),
+    ]);
+    const alerts = alertsRes.hits.hits.map(h => h._source);
+    const assets = assetsRes.hits.hits.map(h => h._source);
+
+    try {
+      const hd = await apiGet("/api/corr/sources/health");
+      document.getElementById("src-health").innerHTML = "数据源 " + (hd.sources || []).map(s => {
+        const c = s.state === "ok" ? "var(--ok)" : s.state === "stale" ? "var(--p1)" : "var(--p0)";
+        const lab = s.state === "ok" ? "正常" : s.state === "stale" ? ("滞后" + Math.round((s.lag_seconds || 0) / 60) + "m") : "无数据";
+        return `<span style="color:${c};margin-left:6px" title="${esc(s.source)}：${lab}｜事件 ${s.events}｜最新 ${esc(s.latest || "-")}">● ${esc(s.source)}</span>`;
+      }).join("");
+    } catch (e) { document.getElementById("src-health").textContent = "数据源状态获取失败"; }
+
+    const byGrade = {}; let threat = 0, blocked = 0;
+    for (const a of alerts) {
+      const g = (a.ssp && a.ssp.alert && a.ssp.alert.grade) || "P3";
+      byGrade[g] = (byGrade[g] || 0) + 1;
+      if (a.threat && a.threat.matched) threat++;
+      const st = a.ssp && a.ssp.alert && a.ssp.alert.status;
+      if (st === "blocked") blocked++;
+    }
+    const geocount = Object.keys(alerts.reduce((m, a) => {
+      const gp = (a.related && a.related.geo_points) || [];
+      if (gp.length) { for (const p of gp) { if (p.ip && parseGeo(p.geo)) m[p.ip] = 1; } return m; }
+      const s = parseGeo(a.source && a.source.geo), d = parseGeo(a.destination && a.destination.geo);
+      if (s && a.source.ip) m[a.source.ip] = 1;
+      if (d && a.destination.ip) m[a.destination.ip] = 1;
+      return m;
+    }, {})).length;
+
+    document.getElementById("kpis").innerHTML = [
+      ["告警总数", alerts.length, ""],
+      ["<span style=\"color:" + GCOLOR.P0 + "\">P0 秒级</span>", byGrade.P0 || 0, ""],
+      ["情报命中", threat, ""],
+      ["已拉黑", blocked, ""],
+      ["SLA 达成率", "<span id=\"sla-rate\">—</span>", ""],
+      ["地理定位外网 IP", geocount, ""],
+      ["资产数", assets.length, ""],
+    ].map(([l, v]) => `<div class="kpi"><div class="lab">${l}</div><div class="val">${v}</div></div>`).join("");
+
+    drawGraticule();
+    await loadBasemap();
+    renderMap(alerts);
+    renderTop(alerts);
+    renderHeat(assets, alerts);
+    renderSla(alerts);
+  } catch (e) {
+    document.getElementById("kpis").innerHTML = `<div class="kpi"><div class="lab err">加载失败</div>
+      <div class="val" style="font-size:12px">${esc(e.message)}</div></div>`;
+    console.error(e);
+  }
+}

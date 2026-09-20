@@ -12,7 +12,10 @@ services:
     command: python3 /srv/portal_server.py
     environment:
       - PORTAL_PORT=8093
-      # 平台内部上游：浏览器只连 :8093，以下组件均退化为内部数据源
+      # 账号文件（随 services/portal 目录挂载进 /srv）：scripts/gen-portal-user.py --write 生成
+      - USERS_FILE=/srv/users.json
+      - SESSION_TTL_SECONDS=28800              # 会话 8 小时
+      # 平台内部上游：浏览器只连 :8088（nginx），/api 反代到这里；以下组件均为内部数据源
       - OPENSEARCH_URL=http://opensearch:9200
       - CORRELATOR_URL=http://correlator:8091
       - ASSET_URL=http://asset:8090
@@ -20,7 +23,6 @@ services:
       - ARKIME_URL=http://arkime:8005         # 容器网络内直连 Arkime Viewer
       - ARKIME_USER=${ARKIME_ADMIN_USER:-admin}
       - ARKIME_PASS=${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}
-      - CORS_ALLOW_ORIGIN=*
     volumes:
       # 服务代码（只读）：services/portal -> /srv
       - ../../services/portal:/srv:ro

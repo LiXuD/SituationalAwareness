@@ -1,0 +1,40 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "display": "技术负责人",
+      "role": "admin",
+      "salt": "9cddd3c0da1436c57d02ae0d266693ff",
+      "hash": "242e81a7045bfa716da5ea4ae0d4e2274147b80a2591ea23cb76f282b3664959",
+      "iterations": 200000,
+      "created_at": "2026-09-20T01:40:38.088616Z"
+    },
+    {
+      "username": "analyst",
+      "display": "安全分析师",
+      "role": "analyst",
+      "salt": "ce97f47ed5f1c8ccf47e3de53421d3e1",
+      "hash": "71fac705e7bd4dd0b700f1256620b512a05ecf203c2df619f60b52d3def05881",
+      "iterations": 200000,
+      "created_at": "2026-09-20T01:40:38.695570Z"
+    },
+    {
+      "username": "asset",
+      "display": "资产管理员",
+      "role": "asset_admin",
+      "salt": "09111532cf807a8cae137748d179166d",
+      "hash": "fc2babd59eb8fe1c398e6054878eb91e0d7ce5f0e4b7cd68cd82637170dbf68b",
+      "iterations": 200000,
+      "created_at": "2026-09-20T01:40:39.006727Z"
+    },
+    {
+      "username": "ops",
+      "display": "运维值班",
+      "role": "ops",
+      "salt": "98cc9ac49f7663a938a3cc1302a53986",
+      "hash": "30d8b1717145c1c482e7e6fc0f16d6bfecef35cbe4b5dbcf9ab42ad07f50900d",
+      "iterations": 200000,
+      "created_at": "2026-09-20T01:40:38.374081Z"
+    }
+  ]
+}
