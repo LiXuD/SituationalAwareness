@@ -20,6 +20,7 @@ include:
   - arkime/compose.yml
   - correlator/compose.yml
   - soar/compose.yml
+  - portal/compose.yml
 
 networks:
   ssp:

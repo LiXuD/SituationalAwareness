@@ -89,13 +89,7 @@
     <span id="clock"></span>
     <span id="src-health" style="margin-left:4px" title="探针数据源健康（PRD §10：断连时标记异常，不影响其他源）"></span>
   </div>
-  <div class="links">
-    <a href="http://localhost:8088/index.html">统一检索</a>
-    <a href="http://localhost:8088/assets.html">统一资产库</a>
-    <a href="http://localhost:8088/soar.html">拉黑审批</a>
-    <a href="http://localhost:8005" target="_blank">Arkime 流量回溯</a>
-    <a href="http://localhost:5601" target="_blank">OpenSearch Dashboards</a>
-  </div>
+  <!-- 统一导航由 assets/nav.js 注入（同站多页，不再外跳第三方控制台） -->
 </header>
 
 <div class="kpis" id="kpis"><div class="kpi"><div class="lab">加载中…</div></div></div>
@@ -341,7 +335,8 @@ function renderMap(alerts){
     const worst=gs[0]||"P3";
     const r=4+Math.round((p.n/maxN)*7);
     const tip=`${p.ip}${p.country?" · "+esc(p.country):""} · ${p.n} 条告警（${gs.map(k=>k+"×"+p.grades[k]).join(" ")}）`;
-    return `<g class="mk"><title>${tip}</title>
+    return `<g class="mk" style="cursor:pointer" onclick="location.href='traffic.html?ip=${encodeURIComponent(p.ip)}'">
+      <title>${tip}——点击在平台内查看该 IP 的流量会话</title>
       <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r+5}" fill="${GCOLOR[worst]}" opacity="0.16"/>
       <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${GCOLOR[worst]}" stroke="#fff" stroke-width=".8" opacity="0.95"/>
     </g>`;
@@ -351,7 +346,7 @@ function renderMap(alerts){
   arr.forEach(p=>{const c=p.country||"未知"; byCountry[c]=(byCountry[c]||0)+p.n;});
   const top=Object.entries(byCountry).sort((a,b)=>b[1]-a[1]);
   document.getElementById("map-legend").innerHTML = top.length
-    ? "来源国家/地区："+top.map(([c,n])=>`<b>${esc(c)}</b> ${n}`).join(" · ")
+    ? "来源国家/地区："+top.map(([c,n])=>`<b>${esc(c)}</b> ${n}`).join(" · ")+"　·　点击散点可在平台内查该 IP 流量"
     : "暂无带地理坐标的告警（需 GeoIP 库 + 外网源 IP 事件）";
 }
 
@@ -422,5 +417,6 @@ tick(); load();
 setInterval(load, 15000);
 setInterval(tick, 1000);
 </script>
+<script src="assets/nav.js"></script>
 </body>
 </html>

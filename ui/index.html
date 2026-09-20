@@ -39,13 +39,7 @@
 <body>
 <header>
   <h1>🛡 统一检索 · 一体化安全态势感知平台</h1>
-  <div class="links">
-    <a href="http://localhost:8088/dashboard.html">态势大屏</a>
-    <a href="http://localhost:8088/assets.html">统一资产库</a>
-    <a href="http://localhost:8088/soar.html">拉黑审批</a>
-    <a href="http://localhost:8005" target="_blank">Arkime 流量回溯</a>
-    <a href="http://localhost:5601" target="_blank">OpenSearch Dashboards</a>
-  </div>
+  <!-- 统一导航由 assets/nav.js 注入（同站多页，不再外跳第三方控制台） -->
 </header>
 
 <div class="wrap">
@@ -141,6 +135,14 @@ async function search(){
       Object.entries(agg).map(([k,v])=>
         `${v.buckets.map(b=>`<span class="pill">${k.replace("by_","")} ${b.key}: <b>${b.doc_count}</b></span>`).join("")}`
       ).join("");
+    // 平台内下钻：外网 IP 一键查流量（跳转本平台「流量回溯」页，带入 IP 与时间窗）
+    const PRIV = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|203\.0\.113\.|198\.51\.100\.|192\.0\.2\.)/;
+    const isExt = ip => !!ip && !PRIV.test(ip) && ip!=="8.8.8.8";
+    const win = ts => { if(!ts) return ""; const t=new Date(ts).getTime(); if(isNaN(t)) return "";
+      return `&start=${t-300000}&end=${t+300000}`; };
+    const flow = (ip, ts) => isExt(ip)
+      ? ` <a href="traffic.html?ip=${encodeURIComponent(ip)}${win(ts)}" onclick="event.stopPropagation()" title="在平台内查看该 IP 的流量会话（不跳第三方控制台）" style="color:#38bdf8;text-decoration:none">⇄</a>`
+      : "";
     rows.innerHTML = data.hits.hits.length ? data.hits.hits.map(h=>{
       const s=h._source, mod=s.event?.module||"", kind=s.event?.kind||"";
       const summary = s.rule?.name || s.rule?.description || s.url?.full || s.dns?.question?.name || s.file?.name || s["log.original"] || s.event?.category || "";
@@ -148,8 +150,8 @@ async function search(){
         <td>${fmt(s["@timestamp"])}</td>
         <td><span class="tag ${mod}">${mod}</span></td>
         <td><span class="tag ${kind==="alert"?"alert":""}">${kind}</span></td>
-        <td>${s.source?.ip||"-"}${s.source?.port?":"+s.source.port:""}</td>
-        <td>${s.destination?.ip||"-"}${s.destination?.port?":"+s.destination.port:""}</td>
+        <td>${s.source?.ip||"-"}${s.source?.port?":"+s.source.port:""}${flow(s.source?.ip, s["@timestamp"])}</td>
+        <td>${s.destination?.ip||"-"}${s.destination?.port?":"+s.destination.port:""}${flow(s.destination?.ip, s["@timestamp"])}</td>
         <td title="${summary}">${summary}</td>
       </tr>`;
     }).join("") : '<tr><td colspan="6" class="empty">无结果</td></tr>';
@@ -166,5 +168,6 @@ function showDetail(json){
 document.getElementById("go").onclick = search;
 document.getElementById("kw").addEventListener("keydown", e=>{ if(e.key==="Enter") search(); });
 </script>
+<script src="assets/nav.js"></script>
 </body>
 </html>

@@ -46,11 +46,7 @@
 <body>
 <header>
   <h1>🛡 统一资产库 · 一体化安全态势感知平台</h1>
-  <div class="links">
-    <a href="http://localhost:8088/dashboard.html">态势大屏</a>
-    <a href="http://localhost:8088/">统一检索</a>
-    <a href="http://localhost:5601" target="_blank">OpenSearch Dashboards</a>
-  </div>
+  <!-- 统一导航由 assets/nav.js 注入（同站多页，不再外跳第三方控制台） -->
 </header>
 
 <div class="wrap">
@@ -222,5 +218,6 @@ $("imp").onclick=importXlsx;
 $("tpl").onclick=downloadTpl;
 load();
 </script>
+<script src="assets/nav.js"></script>
 </body>
 </html>

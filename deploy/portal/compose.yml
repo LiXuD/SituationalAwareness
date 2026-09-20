@@ -1,0 +1,27 @@
+# 平台统一后端（BFF）—— 把第三方组件（Arkime 流量回溯）的能力收进平台
+#
+# 为什么需要它：Arkime Viewer 用 **digest 鉴权** 且 **不发 CORS 头**，浏览器无法直接调用；
+# 若前端直连就只能是"跳去 Arkime 自己的控制台"。本服务在服务端完成鉴权与转发，
+# 前端只访问 http://localhost:8093/api/traffic/*，实现"统一管理查看、不跳转"。
+#
+# 相对路径以本文件所在目录为基准：deploy/portal
+services:
+  portal:
+    image: python:3.12-slim
+    container_name: ssp-portal
+    command: python3 /srv/portal_server.py
+    environment:
+      - PORTAL_PORT=8093
+      - ARKIME_URL=http://arkime:8005         # 容器网络内直连 Arkime Viewer
+      - ARKIME_USER=${ARKIME_ADMIN_USER:-admin}
+      - ARKIME_PASS=${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}
+      - CORS_ALLOW_ORIGIN=*
+    volumes:
+      # 服务代码（只读）：services/portal -> /srv
+      - ../../services/portal:/srv:ro
+    ports:
+      - "8093:8093"
+    depends_on:
+      - arkime
+    networks: [ssp]
+    restart: unless-stopped

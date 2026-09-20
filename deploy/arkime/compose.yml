@@ -16,6 +16,14 @@ services:
   arkime:
     image: ghcr.io/arkime/arkime/arkime:v5.8.1
     container_name: ssp-arkime
+    # ⚠️ 必须固定 hostname：Arkime 的**节点名 = 容器 hostname**，会写进会话/文件记录的 node 字段；
+    # 单节点取包时用 `isLocalView(node)` 判断"是否本节点"，不一致就**代理到 http://<node>:8005**。
+    # 容器重建后 Docker 默认 hostname 变成新容器 ID → 与历史数据 node 不匹配 → 代理到已失效的主机名
+    # → `getaddrinfo ENOTFOUND` → **PCAP 导出恒为空**（极隐蔽）。固定 hostname 后 node 稳定。
+    hostname: arkime
+    # 兜底：万一仍走"远程取包"路径，让节点名可解析到自身
+    extra_hosts:
+      - "arkime:127.0.0.1"
     # 镜像无 ENTRYPOINT，显式启动 Viewer（持久）；pcap 通过 scripts/arkime-import.sh 用 capture -r 回放
     command: ["/opt/arkime/bin/docker.sh", "viewer"]
     volumes:
