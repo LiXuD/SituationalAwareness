@@ -778,6 +778,54 @@ def list_alerts(grade=None, status=None, limit=100):
                  "alerts": [h.get("_source") for h in get_in(res, "hits.hits", [])]}
 
 
+# ----------------------------- 数据源健康 -----------------------------
+def source_health(stale_minutes=None):
+    """各探针数据源健康度：按 fields.log_source 统计最近事件时间，判定 ok/stale/down。
+
+    对应 PRD §10「探针断连：大屏标记该数据源异常，**不影响其他源**」：
+      * down  —— 该源在事件别名内**没有任何事件**；
+      * stale —— 该源最新事件比"全局最新事件"滞后超过 stale_minutes
+                 （用**相对陈旧度**而非绝对当前时间，故历史数据重放同样适用）；
+      * ok    —— 其余。
+    只用一次聚合查询，不写任何状态，天然不影响其它数据源。
+    """
+    if stale_minutes is None:
+        stale_minutes = int(os.environ.get("SOURCE_STALE_MINUTES", "15"))
+    body = {"size": 0, "aggs": {"src": {
+        "terms": {"field": "fields.log_source", "size": 50},
+        "aggs": {"mx": {"max": {"field": "@timestamp"}}}}}}
+    st, res = os_request("POST", f"/{EVENTS_ALIAS}/_search", json.dumps(body))
+    buckets = []
+    if st == 200 and isinstance(res, dict):
+        buckets = (res.get("aggregations", {}) or {}).get("src", {}).get("buckets", []) or []
+    stats = {b["key"]: {"events": b["doc_count"], "ms": b["mx"].get("value"),
+                        "latest": b["mx"].get("value_as_string")} for b in buckets}
+    latest_all = None
+    for s in stats.values():
+        if s["ms"] and (latest_all is None or s["ms"] > latest_all):
+            latest_all = s["ms"]
+    names = list(ALLOWED_SOURCES) or sorted(stats)
+    for n in stats:
+        if n not in names:
+            names.append(n)
+    out = []
+    for name in names:
+        s = stats.get(name)
+        if not s or not s.get("ms"):
+            out.append({"source": name, "state": "down", "events": 0,
+                        "latest": None, "lag_seconds": None})
+            continue
+        lag = int((latest_all - s["ms"]) / 1000) if latest_all else None
+        state = "stale" if (lag is not None and lag > stale_minutes * 60) else "ok"
+        out.append({"source": name, "state": state, "events": s["events"],
+                    "latest": s["latest"], "lag_seconds": lag})
+    overall = "ok" if out and all(x["state"] == "ok" for x in out) else "degraded"
+    return {"checked_at": iso(now_utc()), "stale_minutes": stale_minutes,
+            "latest_event": (iso(datetime.datetime.utcfromtimestamp(latest_all / 1000))
+                             if latest_all else None),
+            "overall": overall, "sources": out}
+
+
 # ----------------------------- HTTP 服务 -----------------------------
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -835,6 +883,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/rules":
             self._send(200, {"rules": RULES, "sla_seconds": GRADE_SLA_SECONDS})
+            return
+        if path == "/sources/health":
+            sm = None
+            if "?" in self.path:
+                for kv in self.path.split("?", 1)[1].split("&"):
+                    if kv.startswith("stale_minutes="):
+                        try:
+                            sm = int(kv.split("=", 1)[1])
+                        except ValueError:
+                            sm = None
+            self._send(200, source_health(sm))
             return
         if path == "/alerts":
             q = {}
