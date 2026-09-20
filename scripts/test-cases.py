@@ -18,8 +18,10 @@ test-cases.py —— I-09 测试用例（反例/边界）执行器，纯标准�
 退出码：0=全部通过；1=有失败项。
 """
 import argparse
+import http.cookiejar
 import json
 import os
+import sqlite3
 import ssl
 import subprocess
 import sys
@@ -50,10 +52,13 @@ def sh(cmd, timeout=300):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def http(method, url, body=None, timeout=30, ctype="application/json"):
+def http(method, url, body=None, timeout=30, ctype="application/json", headers=None):
     data = body if isinstance(body, (bytes, bytearray)) else (
         json.dumps(body).encode() if body is not None else None)
-    req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": ctype})
+    h = {"Content-Type": ctype}
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, data=data, method=method, headers=h)
     try:
         with _O.open(req, timeout=timeout) as r:
             raw = r.read().decode("utf-8", "replace")
@@ -76,6 +81,37 @@ def es_count(index):
     return d.get("count", 0) if isinstance(d, dict) else 0
 
 
+def portal_login(username="admin", password="REDACTED-SSP-PWD"):
+    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
+    jar = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                     urllib.request.HTTPCookieProcessor(jar),
+                                     urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    r = urllib.request.Request(f"{UI}/api/auth/login",
+                               data=json.dumps({"username": username, "password": password}).encode(),
+                               method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with op.open(r, timeout=15):
+            pass
+    except Exception:
+        return None
+    for c in jar:
+        if c.name == "ssp_session":
+            return c.value
+    return None
+
+
+def sqlite_asset_count():
+    dbp = os.path.join(ROOT, "data", "ssp.db")
+    try:
+        c = sqlite3.connect(dbp)
+        n = c.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+        c.close()
+        return n
+    except Exception:
+        return -1
+
+
 def rec(tid, name, ok, detail=""):
     RESULTS.append((tid, name, bool(ok), detail))
     print(f"  [{'PASS' if ok else 'FAIL'}] {tid} {name}" + (f" —— {detail}" if detail else ""), flush=True)
@@ -88,13 +124,22 @@ def health():
 
 
 def clear_drafts():
-    http("POST", f"{OS}/ssp-soar-drafts/_delete_by_query?refresh=true",
-         {"query": {"match_all": {}}}, timeout=30, ctype="application/json")
+    dbp = os.path.join(ROOT, "data", "ssp.db")
+    try:
+        c = sqlite3.connect(dbp)
+        c.execute("DELETE FROM soar_drafts")
+        c.execute("UPDATE blacklist SET status='inactive'")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
 
 
 def ipt_ips():
-    st, d = http("GET", f"{SOAR}/soar/blocks")
-    return [b.get("ip") for b in (d or {}).get("rules", [])] if isinstance(d, dict) else []
+    st, d = http("GET", f"{SOAR}/soar/block/list")
+    if isinstance(d, dict):
+        return d.get("rules", [])
+    return []
 
 
 def wait_port(url, n=25):
@@ -141,9 +186,13 @@ def case_n1_probe_down():
 
 def case_n2_approval_timeout():
     print("\n▶ N2 审批超时（草稿保留、不自动提交）", flush=True)
+    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("N2", "审批超时", False, "登录失败")
+    hdrs = {"Cookie": f"ssp_session={tok}"}
     clear_drafts()
-    http("POST", f"{SOAR}/soar/drafts/generate", {})
-    st, d = http("GET", f"{SOAR}/soar/drafts")
+    http("POST", f"{UI}/api/soar/soar/drafts/generate", {}, headers=hdrs)
+    st, d = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items = (d or {}).get("drafts", []) if isinstance(d, dict) else []
     pend = [x for x in items if x.get("status") == "pending_approval"]
     if not pend:
@@ -152,7 +201,7 @@ def case_n2_approval_timeout():
     wait = int(os.environ.get("N2_WAIT_SECONDS", "20"))
     print(f"  不审批，等待 {wait}s（模拟运维未及时处理）...", flush=True)
     time.sleep(wait)
-    st, d2 = http("GET", f"{SOAR}/soar/drafts")
+    st, d2 = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items2 = (d2 or {}).get("drafts", []) if isinstance(d2, dict) else []
     still = [x for x in items2 if x.get("status") == "pending_approval"]
     after = ipt_ips()
@@ -169,9 +218,14 @@ def case_n3_block_failure():
                 "      - SSP_HOST_PID=999999\n")     # 非法宿主 PID → nsenter 必失败
     sh(f"{COMPOSE} -f {ov} up -d --force-recreate soar")
     wait_port(f"{SOAR}/health")
+    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    if not tok:
+        sh(f"{COMPOSE} up -d --force-recreate soar")
+        return rec("N3", "落黑失败", False, "登录失败")
+    hdrs = {"Cookie": f"ssp_session={tok}"}
     clear_drafts()
-    http("POST", f"{SOAR}/soar/drafts/generate", {})
-    st, d = http("GET", f"{SOAR}/soar/drafts")
+    http("POST", f"{UI}/api/soar/soar/drafts/generate", {}, headers=hdrs)
+    st, d = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items = (d or {}).get("drafts", []) if isinstance(d, dict) else []
     pend = [x for x in items if x.get("status") == "pending_approval" and x.get("target_ip")]
     if not pend:
@@ -179,9 +233,10 @@ def case_n3_block_failure():
         return rec("N3", "落黑失败", False, "无待审批草稿（前置失败）")
     t = pend[0]
     ip, did, aid = t["target_ip"], t.get("draft_id") or t.get("id"), t.get("alert_id")
-    http("POST", f"{SOAR}/soar/drafts/{did}/approve", {"operator": "test-n3", "dry_run": False}, timeout=60)
+    http("POST", f"{UI}/api/soar/soar/drafts/{did}/approve",
+         {"operator": "test-n3", "dry_run": False}, timeout=60, headers=hdrs)
     time.sleep(1)
-    st, d3 = http("GET", f"{SOAR}/soar/drafts")
+    st, d3 = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items3 = (d3 or {}).get("drafts", []) if isinstance(d3, dict) else []
     cur = next((x for x in items3 if (x.get("draft_id") or x.get("id")) == did), {})
     acts = [h.get("action") for h in cur.get("history", [])]
@@ -223,7 +278,10 @@ wb.save(sys.argv[1])
 
 def case_n4_excel_import_rollback():
     print("\n▶ N4 Excel 导入失败（整批回滚 + 逐行报错）", flush=True)
-    base = es_count("ssp-asset")
+    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("N4", "Excel 导入回滚", False, "登录失败，无法获取会话")
+    base = sqlite_asset_count()
     xp = "/tmp/ssp-bad-assets.xlsx"
     ok_gen, err = _make_bad_xlsx(xp)
     if not ok_gen:
@@ -234,9 +292,10 @@ def case_n4_excel_import_rollback():
     body = (f"--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"bad.xlsx\"\r\n"
             f"Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n").encode() \
         + content + f"\r\n--{b}--\r\n".encode()
-    st, resp = http("POST", f"{ASSET}/api/assets/import", body, timeout=60,
-                    ctype=f"multipart/form-data; boundary={b}")
-    after = es_count("ssp-asset")
+    st, resp = http("POST", f"{UI}/api/asset/api/assets/import", body, timeout=60,
+                    ctype=f"multipart/form-data; boundary={b}",
+                    headers={"Cookie": f"ssp_session={tok}"})
+    after = sqlite_asset_count()
     errs = resp.get("errors", []) if isinstance(resp, dict) else []
     ok = (st == 422 and after == base and len(errs) >= 2)
     detail = (f"HTTP={st}（应 422）；资产数 {base}→{after}（应不变）；"

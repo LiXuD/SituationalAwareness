@@ -34,7 +34,6 @@ services:
       - arkime
       - opensearch
       - correlator
-      - asset
       - soar
     networks: [ssp]
     restart: unless-stopped

@@ -25,7 +25,9 @@ import argparse
 import json
 import os
 import re
+import http.cookiejar
 import ssl
+import sqlite3
 import subprocess
 import sys
 import time
@@ -35,6 +37,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OS = os.environ.get("OS_URL", "http://localhost:9200")
 CORR = os.environ.get("CORR_URL", "http://localhost:8091")
 SOAR = os.environ.get("SOAR_URL", "http://localhost:8092")
+UI = os.environ.get("UI_URL", "http://localhost:8088")
 
 RESULTS = []          # (id, name, ok, detail)
 _O = urllib.request.build_opener(urllib.request.ProxyHandler({}),
@@ -50,10 +53,12 @@ def sh(cmd, timeout=300, env=None):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def http(method, url, body=None, timeout=30):
+def http(method, url, body=None, timeout=30, headers=None):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json"})
+    h = {"Content-Type": "application/json"}
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, data=data, method=method, headers=h)
     try:
         with _O.open(req, timeout=timeout) as r:
             raw = r.read().decode("utf-8", "replace")
@@ -83,6 +88,50 @@ def es_doc(index, _id):
     return d.get("_source", {}) if isinstance(d, dict) and d.get("found") else {}
 
 
+def portal_login(username="admin", password="REDACTED-SSP-PWD"):
+    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
+    jar = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                     urllib.request.HTTPCookieProcessor(jar),
+                                     urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    r = urllib.request.Request(f"{UI}/api/auth/login",
+                               data=json.dumps({"username": username, "password": password}).encode(),
+                               method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with op.open(r, timeout=15):
+            pass
+    except Exception:
+        return None
+    for c in jar:
+        if c.name == "ssp_session":
+            return c.value
+    return None
+
+
+def sqlite_asset_count():
+    try:
+        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
+        n = c.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+        c.close()
+        return n
+    except Exception:
+        return 0
+
+
+def sqlite_asset_risk_avg():
+    try:
+        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
+        r = c.execute("SELECT AVG(risk_score) FROM assets").fetchone()[0]
+        c.close()
+        return r or 0
+    except Exception:
+        return 0
+
+
+def soar_headers(token):
+    return {"Cookie": f"ssp_session={token}"}
+
+
 def rec(rid, name, ok, detail=""):
     RESULTS.append((rid, name, bool(ok), detail))
     print(f"  [{'PASS' if ok else 'FAIL'}] {rid} {name}" + (f" —— {detail}" if detail else ""), flush=True)
@@ -92,12 +141,19 @@ def rec(rid, name, ok, detail=""):
 # --------------------------------------------------------------------------- #
 def step_reset():
     print("\n▶ 复位：解除全部封禁 + 清理草稿", flush=True)
-    st, blocks = http("GET", f"{SOAR}/soar/blocks")
-    ips = [b.get("ip") for b in (blocks or {}).get("rules", [])] if isinstance(blocks, dict) else []
+    st, blocks = http("GET", f"{SOAR}/soar/block/list")
+    ips = blocks.get("rules", []) if isinstance(blocks, dict) else []
     for ip in ips:
-        http("POST", f"{SOAR}/soar/blocks/remove", {"ip": ip, "operator": "acceptance"})
-    sh(f"curl -sS --noproxy '*' -X DELETE '{OS}/ssp-soar-drafts' >/dev/null 2>&1")
-    print(f"  已解除 {len(ips)} 条封禁；草稿索引已清理", flush=True)
+        http("POST", f"{SOAR}/soar/block/remove", {"ip": ip})
+    try:
+        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
+        c.execute("DELETE FROM soar_drafts")
+        c.execute("UPDATE blacklist SET status='inactive'")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+    print(f"  已解除 {len(ips)} 条封禁；草稿已清理", flush=True)
 
 
 def step_a1_replay_and_ingest(do_replay):
@@ -201,13 +257,17 @@ def step_a5_sla():
 
 def step_a6_draft_no_autosubmit():
     print("\n▶ A6 草稿生成·不自动提交（I-05）", flush=True)
-    st, blocks_before = http("GET", f"{SOAR}/soar/blocks")
+    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("A6", "草稿生成·不自动提交", False, "登录失败")
+    hdrs = soar_headers(tok)
+    st, blocks_before = http("GET", f"{SOAR}/soar/block/list")
     rules_before = len((blocks_before or {}).get("rules", [])) if isinstance(blocks_before, dict) else 0
-    http("POST", f"{SOAR}/soar/drafts/generate", {})
-    st, drafts = http("GET", f"{SOAR}/soar/drafts")
+    http("POST", f"{UI}/api/soar/soar/drafts/generate", {}, headers=hdrs)
+    st, drafts = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items = drafts.get("drafts", drafts.get("items", [])) if isinstance(drafts, dict) else []
     pending = [x for x in items if x.get("status") == "pending_approval"]
-    st, blocks_after = http("GET", f"{SOAR}/soar/blocks")
+    st, blocks_after = http("GET", f"{SOAR}/soar/block/list")
     rules_after = len((blocks_after or {}).get("rules", [])) if isinstance(blocks_after, dict) else 0
     ok = len(pending) > 0 and rules_after == rules_before
     return rec("A6", "草稿生成·不自动提交", ok,
@@ -216,7 +276,11 @@ def step_a6_draft_no_autosubmit():
 
 def step_a7_approve_block():
     print("\n▶ A7 人工审批→落黑→回写（I-05）", flush=True)
-    st, drafts = http("GET", f"{SOAR}/soar/drafts")
+    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("A7", "人工审批落黑", False, "登录失败")
+    hdrs = soar_headers(tok)
+    st, drafts = http("GET", f"{UI}/api/soar/soar/drafts", headers=hdrs)
     items = drafts.get("drafts", drafts.get("items", [])) if isinstance(drafts, dict) else []
     pend = [x for x in items if x.get("status") == "pending_approval" and x.get("target_ip")]
     if not pend:
@@ -232,15 +296,15 @@ def step_a7_approve_block():
     did = target.get("draft_id") or target.get("id")
     alert_id = target.get("alert_id")
     t0 = time.time()
-    code, out = http("POST", f"{SOAR}/soar/drafts/{did}/approve",
-                     {"operator": "acceptance-demo", "dry_run": False}, timeout=60)
+    code, out = http("POST", f"{UI}/api/soar/soar/drafts/{did}/approve",
+                     {"operator": "acceptance-demo", "dry_run": False}, timeout=60, headers=hdrs)
     elapsed = time.time() - t0
     # 落黑结果 + 回写：索引 refresh_interval=1s，需刷新并轮询等待，避免读到旧版本
     al, blocked_ips = {}, []
     for _ in range(15):
         http("POST", f"{OS}/ssp-alerts/_refresh")
-        st, blocks = http("GET", f"{SOAR}/soar/blocks")
-        blocked_ips = [b.get("ip") for b in (blocks or {}).get("rules", [])] if isinstance(blocks, dict) else []
+        st, blocks = http("GET", f"{SOAR}/soar/block/list")
+        blocked_ips = blocks.get("rules", []) if isinstance(blocks, dict) else []
         al = es_doc("ssp-alerts", alert_id).get("ssp", {}).get("alert", {}) if alert_id else {}
         if ip in blocked_ips and al.get("status") == "blocked":
             break
@@ -264,15 +328,14 @@ def step_a7_approve_block():
 def step_a8_dashboard():
     print("\n▶ A8 大屏四视图（I-07）", flush=True)
     alerts = es_count("ssp-alerts")
-    assets = es_count("ssp-assets")
+    assets = sqlite_asset_count()
     geo = es_search("ssp-alerts", {"size": 0, "aggs": {"g": {"filter": {"exists": {"field": "related.geo_points.geo.location"}}}}})
     geo_n = geo.get("aggregations", {}).get("g", {}).get("doc_count", 0)
     by_grade = es_search("ssp-alerts", {"size": 0, "aggs": {"g": {"terms": {"field": "ssp.alert.grade"}}}})
     grades = {b["key"]: b["doc_count"] for b in by_grade.get("aggregations", {}).get("g", {}).get("buckets", [])}
-    heat = es_search("ssp-assets", {"size": 0, "aggs": {"r": {"stats": {"field": "risk_score"}}}})
-    rstat = heat.get("aggregations", {}).get("r", {})
-    # 页面可达
-    st_ui, _ = http("GET", "http://localhost:8088/dashboard.html")
+    rstat = {"avg": round(sqlite_asset_risk_avg(), 1)}
+    # 页面可达（SPA 入口 index.html）
+    st_ui, _ = http("GET", f"{UI}/")
     ok = alerts > 0 and assets > 0 and geo_n > 0 and st_ui == 200
     return rec("A8", "大屏四视图", ok,
                f"①攻击地图 geo 告警={geo_n} ②告警TOP 分级={grades} ③资产热力 资产={assets}(risk avg={rstat.get('avg')}) ④SLA(见 A5)；页面 http={st_ui}")

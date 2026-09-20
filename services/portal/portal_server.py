@@ -60,7 +60,6 @@ ARKIME_PASS = os.environ.get("ARKIME_PASS", "REDACTED-ARKIME-PWD")
 UPSTREAMS = {
     "os":    os.environ.get("OPENSEARCH_URL", "http://opensearch:9200").rstrip("/"),
     "corr":  os.environ.get("CORRELATOR_URL", "http://correlator:8091").rstrip("/"),
-    "asset": os.environ.get("ASSET_URL", "http://asset:8090").rstrip("/"),
     "soar":  os.environ.get("SOAR_URL", "http://soar:8092").rstrip("/"),
 }
 
@@ -271,8 +270,13 @@ class Handler(BaseHTTPRequestHandler):
                 ups[name] = 0 < st < 500
             st, _h, _b = _open(_arkime, "GET", ARKIME_URL + "/api/eshealth", timeout=5)
             ups["arkime"] = st == 200
+            try:
+                n_users = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
+                ups["db"] = True
+            except Exception:
+                n_users, ups["db"] = 0, False
             self._json(200, {"status": "ok", "portal_port": PORTAL_PORT,
-                             "users_loaded": len(USERS), "upstreams": ups})
+                             "backend": db.backend(), "users": n_users, "upstreams": ups})
             return
 
         # ---- 认证 ----

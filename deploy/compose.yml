@@ -16,7 +16,6 @@ include:
   - logstash/compose.yml
   - filebeat/compose.yml
   - ui/compose.yml
-  - asset/compose.yml
   - arkime/compose.yml
   - correlator/compose.yml
   - soar/compose.yml
