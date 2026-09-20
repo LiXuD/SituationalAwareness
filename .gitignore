@@ -24,3 +24,6 @@ logs/demo-stage/**/*.log
 
 # 地图底图生成器的数据缓存（Natural Earth 源数据）
 scripts/.cache/
+
+# 平台业务数据库（SQLite 运行时数据，由 scripts/init-db.py 生成，不入库）
+data/

@@ -45,8 +45,9 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import db
+
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
-USERS_FILE = os.environ.get("USERS_FILE", "/srv/users.json")
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
 COOKIE_NAME = os.environ.get("SESSION_COOKIE", "ssp_session")
 
@@ -82,26 +83,10 @@ _arkime = urllib.request.build_opener(
     urllib.request.HTTPBasicAuthHandler(_pm),
 )
 
-SESSIONS = {}          # token -> {username, role, display, exp}
-
-
 # --------------------------------------------------------------------------- #
-# 账号 / 会话
+# 账号 / 会话 / 审计（统一落到平台业务库，见 db.py）
 # --------------------------------------------------------------------------- #
-def load_users():
-    try:
-        with open(USERS_FILE, encoding="utf-8") as f:
-            db = json.load(f)
-        return {u["username"]: u for u in db.get("users", [])}
-    except Exception as e:
-        print(f"[portal] 读取账号文件失败 {USERS_FILE}: {e}", flush=True)
-        return {}
-
-
-USERS = load_users()
-
-
-def verify_password(u, password):
+def _verify_password(u, password):
     try:
         dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
                                  bytes.fromhex(u["salt"]), int(u.get("iterations", 200000)))
@@ -110,14 +95,8 @@ def verify_password(u, password):
         return False
 
 
-def new_session(u):
-    tok = secrets.token_urlsafe(32)
-    SESSIONS[tok] = {"username": u["username"], "role": u.get("role", "analyst"),
-                     "display": u.get("display") or u["username"],
-                     "exp": time.time() + SESSION_TTL}
-    for k in [k for k, v in SESSIONS.items() if v["exp"] < time.time()]:
-        SESSIONS.pop(k, None)
-    return tok
+def _now():
+    return int(time.time())
 
 
 def _open(opener, method, url, body=None, ctype=None, timeout=60):
@@ -232,13 +211,22 @@ class Handler(BaseHTTPRequestHandler):
             tok = c[COOKIE_NAME].value if COOKIE_NAME in c else None
         except Exception:
             return None
-        s = SESSIONS.get(tok) if tok else None
-        if not s:
+        if not tok:
             return None
-        if s["exp"] < time.time():
-            SESSIONS.pop(tok, None)
-            return None
-        return s
+        return db.query_one(
+            "SELECT token, username, role, display FROM sessions WHERE token=? AND expires_at>?",
+            (tok, _now()))
+
+    def _audit(self, username, action, target="", detail=""):
+        try:
+            import uuid
+            db.execute(
+                "INSERT INTO audit_log (id, username, action, target, detail, ip, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (uuid.uuid4().hex, username, action, target, detail,
+                 self.client_address[0], _now()))
+        except Exception:
+            pass
 
     # ---------------- 路由 ----------------
     def do_OPTIONS(self):
@@ -290,28 +278,45 @@ class Handler(BaseHTTPRequestHandler):
             b = self._json_body()
             name = (b.get("username") or "").strip()
             pwd = b.get("password") or ""
-            usr = USERS.get(name)
-            if not usr or not verify_password(usr, pwd):
+            usr = db.query_one(
+                "SELECT username, display, role, salt, hash, iterations, status "
+                "FROM users WHERE username=?", (name,))
+            if not usr or usr.get("status") != "active" or not _verify_password(usr, pwd):
                 time.sleep(0.4)               # 轻微延时，抑制暴力猜测
+                self._audit(name, "login_failed", "session", "用户名或密码错误")
                 self._json(401, {"error": "用户名或密码错误"})
                 return
-            tok = new_session(usr)
+            tok = secrets.token_urlsafe(32)
+            now = _now()
+            db.execute(
+                "INSERT INTO sessions (token, username, role, display, created_at, expires_at, ip, user_agent) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (tok, usr["username"], usr["role"], usr.get("display") or usr["username"],
+                 now, now + SESSION_TTL, self.client_address[0],
+                 self.headers.get("User-Agent", "")))
+            self._audit(usr["username"], "login", "session", "登录成功")
             ck = f"{COOKIE_NAME}={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}"
             self._json(200, {"ok": True, "user": {"username": usr["username"],
-                                                  "role": usr.get("role"),
-                                                  "role_label": ROLE_LABEL.get(usr.get("role"), usr.get("role")),
+                                                  "role": usr["role"],
+                                                  "role_label": ROLE_LABEL.get(usr["role"], usr["role"]),
                                                   "display": usr.get("display") or usr["username"]}},
                        cookie=ck)
             return
 
         if path == "/api/auth/logout" and write:
             raw = self.headers.get("Cookie")
+            tok = None
             try:
                 c = http.cookies.SimpleCookie(raw or "")
                 if COOKIE_NAME in c:
-                    SESSIONS.pop(c[COOKIE_NAME].value, None)
+                    tok = c[COOKIE_NAME].value
             except Exception:
                 pass
+            if tok:
+                s = db.query_one("SELECT username FROM sessions WHERE token=?", (tok,))
+                db.execute("DELETE FROM sessions WHERE token=?", (tok,))
+                if s:
+                    self._audit(s["username"], "logout", "session", "退出登录")
             self._json(200, {"ok": True}, cookie=f"{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
             return
 
@@ -375,6 +380,8 @@ class Handler(BaseHTTPRequestHandler):
                                           f"无权执行该操作", "role": sess["role"],
                                  "required": sorted(allowed)})
                 return
+            if is_write(key, self.command, rest):
+                self._audit(sess["username"], self.command, f"/api/{key}/{rest}", "")
             base = UPSTREAMS[key]
             url = f"{base}/{rest}" + (("?" + u.query) if u.query else "")
             st, hdrs, body = _open(_plain, self.command, url, body=self._body(),
@@ -386,10 +393,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    if not USERS:
-        print(f"[portal] ⚠️ 未加载到任何账号（{USERS_FILE}）——请先运行 scripts/gen-portal-user.py --write", flush=True)
+    try:
+        n = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
+    except Exception:
+        n = 0
+    if not n:
+        print("[portal] ⚠️ users 表为空——请先运行 scripts/init-db.py", flush=True)
     srv = ThreadingHTTPServer(("0.0.0.0", PORTAL_PORT), Handler)
-    print(f"[portal] 平台统一后端 v3 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {len(USERS)} 个", flush=True)
+    print(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}", flush=True)
     print(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}", flush=True)
     srv.serve_forever()
 

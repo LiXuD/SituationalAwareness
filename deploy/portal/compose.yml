@@ -12,8 +12,8 @@ services:
     command: python3 /srv/portal_server.py
     environment:
       - PORTAL_PORT=8093
-      # 账号文件（随 services/portal 目录挂载进 /srv）：scripts/gen-portal-user.py --write 生成
-      - USERS_FILE=/srv/users.json
+      # 业务库：SQLite（默认）；切换 PostgreSQL 时改为 postgresql://user:pass@host:5432/ssp
+      - PLATFORM_DB=sqlite:////data/ssp.db
       - SESSION_TTL_SECONDS=28800              # 会话 8 小时
       # 平台内部上游：浏览器只连 :8088（nginx），/api 反代到这里；以下组件均为内部数据源
       - OPENSEARCH_URL=http://opensearch:9200
@@ -26,6 +26,8 @@ services:
     volumes:
       # 服务代码（只读）：services/portal -> /srv
       - ../../services/portal:/srv:ro
+      # 业务数据库（可写持久化）：宿主机 data/ -> 容器 /data（ssp.db 不随容器重建丢失）
+      - ../../data:/data
     ports:
       - "8093:8093"
     depends_on:
