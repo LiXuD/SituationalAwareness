@@ -103,6 +103,30 @@ def query_one(sql, params=()):
     return rows[0] if rows else None
 
 
+def run_in_transaction(fn):
+    """在单事务里执行 fn(cur)；成功 commit，异常 rollback 并重新抛出。
+
+    fn 接收一个 cursor，用 cur.execute(sql, params) 写数据。
+    """
+    if _BACKEND == "sqlite":
+        with _lock:
+            c = _get_sqlite()
+            try:
+                fn(c.cursor())
+                c.commit()
+            except Exception:
+                c.rollback()
+                raise
+        return
+    c = _get_pg()
+    try:
+        fn(c.cursor())
+        c.commit()
+    except Exception:
+        c.rollback()
+        raise
+
+
 def init_schema():
     """建表（幂等）。"""
     if _BACKEND == "sqlite":
@@ -161,11 +185,14 @@ CREATE TABLE IF NOT EXISTS assets (
     ip            TEXT NOT NULL DEFAULT '',
     asset_type    TEXT NOT NULL DEFAULT '',
     importance    TEXT NOT NULL DEFAULT '一般',
+    importance_score INTEGER NOT NULL DEFAULT 1,
     risk_score    INTEGER NOT NULL DEFAULT 0,
     owner         TEXT NOT NULL DEFAULT '',
     department    TEXT NOT NULL DEFAULT '',
     location      TEXT NOT NULL DEFAULT '',
-    tags          TEXT NOT NULL DEFAULT '',
+    os            TEXT NOT NULL DEFAULT '',
+    tags          TEXT NOT NULL DEFAULT '[]',
+    description   TEXT NOT NULL DEFAULT '',
     source        TEXT NOT NULL DEFAULT 'manual',
     status        TEXT NOT NULL DEFAULT 'active',
     created_at    INTEGER NOT NULL,

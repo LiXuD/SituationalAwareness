@@ -46,6 +46,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import db
+import assets
 
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
@@ -367,6 +368,61 @@ class Handler(BaseHTTPRequestHandler):
             self._send_raw(st, body, hdrs.get("Content-Type", "application/vnd.tcpdump.pcap"),
                            extra={"Content-Disposition": 'attachment; filename="ssp-export.pcap"'})
             return
+
+        # ---- 统一资产库（落业务库，替代 asset_server 透传；前端路径 /api/asset/api/assets*）----
+        if path.startswith("/api/asset/api/assets"):
+            sub = path[len("/api/asset/api/assets"):]
+            if sub == "/template.xlsx" and not write:
+                tpl = os.environ.get("ASSET_TEMPLATE_FILE", "/srv/templates/asset-import-template.xlsx")
+                if os.path.exists(tpl):
+                    with open(tpl, "rb") as f:
+                        self._send_raw(200, f.read(),
+                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       extra={"Content-Disposition": 'attachment; filename="asset-import-template.xlsx"'})
+                else:
+                    self._json(404, {"error": "模板文件缺失"})
+                return
+            if write and sess["role"] not in WRITE_ROLES["asset"]:
+                self._json(403, {"error": "当前角色无权执行该操作", "role": sess["role"],
+                                 "required": sorted(WRITE_ROLES["asset"])})
+                return
+            if sub in ("", "/"):
+                if write:
+                    st, obj = assets.do_create(self._json_body())
+                    if st == 200:
+                        self._audit(sess["username"], "POST", "/api/assets", obj.get("asset_id", ""))
+                else:
+                    page = max(1, int(q.get("page", "1") or "1"))
+                    size = min(200, max(1, int(q.get("size", "20") or "20")))
+                    st, obj = assets.do_list(q.get("q", "").strip(), q.get("importance", "").strip(), page, size)
+                self._json(st, obj)
+                return
+            if sub == "/import" and write:
+                fields = assets.parse_multipart(self._body(), self.headers.get("Content-Type", ""))
+                f = fields.get("file")
+                if not f or not f[1]:
+                    self._json(400, {"ok": False, "error": "未收到文件字段 file"})
+                    return
+                st, obj = assets.do_import_xlsx(f[1])
+                if st == 200:
+                    self._audit(sess["username"], "POST", "/api/assets/import",
+                                "导入 %d 条" % obj.get("imported", 0))
+                self._json(st, obj)
+                return
+            if sub.startswith("/") and len(sub) > 1 and sub != "/import":
+                aid = sub[1:]
+                if self.command == "PUT":
+                    st, obj = assets.do_update(aid, self._json_body())
+                    if st == 200:
+                        self._audit(sess["username"], "PUT", "/api/assets/" + aid, "")
+                elif self.command == "DELETE":
+                    st, obj = assets.do_delete(aid)
+                    if st == 200:
+                        self._audit(sess["username"], "DELETE", "/api/assets/" + aid, "")
+                else:
+                    st, obj = 404, {"error": "not found"}
+                self._json(st, obj)
+                return
 
         # ---- 通用透传 + 授权 ----
         parts = path.split("/")
