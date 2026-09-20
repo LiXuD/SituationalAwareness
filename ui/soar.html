@@ -89,8 +89,9 @@
 </div>
 
 <script>
-const SOAR = "http://localhost:8092";
-const OS = "http://localhost:9200";
+const PORTAL = "http://localhost:8093";   // 平台统一后端：前端只连它
+const SOAR = PORTAL + "/api/soar";        // SOAR 经平台代理（不再直连 :8092）
+const OS = PORTAL + "/api/os";            // OpenSearch 经平台代理（不再直连 :9200）
 const LABEL = {pending_approval:"待审批",executed:"已提交封禁",rejected:"已驳回",failed:"落黑失败",reverted:"已解除"};
 const OPERATOR = "lixd";
 

@@ -128,8 +128,9 @@
 </div>
 
 <script>
-const OS = "http://localhost:9200";
-const CORR = "http://localhost:8091";
+const PORTAL = "http://localhost:8093";   // 平台统一后端：前端只连它
+const OS = PORTAL + "/api/os";            // OpenSearch 经平台代理（不再直连 :9200）
+const CORR = PORTAL + "/api/corr";       // 关联服务经平台代理
 const ALERTS = "ssp-alerts";
 const ASSETS = "ssp-assets";
 const GRADES = ["P0","P1","P2","P3"];

@@ -97,7 +97,8 @@
 </div>
 
 <script>
-const API = "http://localhost:8090";
+const PORTAL = "http://localhost:8093";   // 平台统一后端：前端只连它
+const API = PORTAL + "/api/asset";        // 资产服务经平台代理（不再直连 :8090）
 const $ = id => document.getElementById(id);
 
 function impBadge(v){return v==="核心"?"core":v==="重要"?"important":v==="一般"?"normal":"";}

@@ -95,7 +95,8 @@
 </div>
 
 <script>
-const OS = "http://localhost:9200";
+const PORTAL = "http://localhost:8093";   // 平台统一后端：前端只连它
+const OS = PORTAL + "/api/os";            // OpenSearch 经平台代理（不再直连 :9200）
 const RANGES = {"15m":"now-15m","1h":"now-1h","24h":"now-24h","7d":"now-7d","all":null};
 
 function buildQuery(){

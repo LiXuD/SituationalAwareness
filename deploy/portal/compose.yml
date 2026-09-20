@@ -12,6 +12,11 @@ services:
     command: python3 /srv/portal_server.py
     environment:
       - PORTAL_PORT=8093
+      # 平台内部上游：浏览器只连 :8093，以下组件均退化为内部数据源
+      - OPENSEARCH_URL=http://opensearch:9200
+      - CORRELATOR_URL=http://correlator:8091
+      - ASSET_URL=http://asset:8090
+      - SOAR_URL=http://soar:8092
       - ARKIME_URL=http://arkime:8005         # 容器网络内直连 Arkime Viewer
       - ARKIME_USER=${ARKIME_ADMIN_USER:-admin}
       - ARKIME_PASS=${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}
@@ -23,5 +28,9 @@ services:
       - "8093:8093"
     depends_on:
       - arkime
+      - opensearch
+      - correlator
+      - asset
+      - soar
     networks: [ssp]
     restart: unless-stopped
