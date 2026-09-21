@@ -40,6 +40,16 @@ def qmark():
     return "%s" if _BACKEND == "postgresql" else "?"
 
 
+def adapt_sql(sql):
+    """业务 SQL 统一用 `?` 占位符；PG 后端在此转换为 %s 并转义裸 %。
+
+    这样业务代码（portal/assets/soar/users）无需关心后端方言，双后端通用。
+    """
+    if _BACKEND == "postgresql":
+        return sql.replace("%", "%%").replace("?", "%s")
+    return sql
+
+
 def _get_sqlite():
     global _sqlite_conn
     if _sqlite_conn is None:
@@ -70,6 +80,7 @@ def _dict_rows(rows):
 
 def execute(sql, params=()):
     """执行写操作并提交，返回受影响行数。"""
+    sql = adapt_sql(sql)
     if _BACKEND == "sqlite":
         with _lock:
             c = _get_sqlite()
@@ -86,6 +97,7 @@ def execute(sql, params=()):
 
 def query(sql, params=()):
     """查询，返回 list[dict]。"""
+    sql = adapt_sql(sql)
     if _BACKEND == "sqlite":
         with _lock:
             c = _get_sqlite()

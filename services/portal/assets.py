@@ -373,11 +373,11 @@ def do_import_xlsx(buf):
     def _write(cur):
         for d in docs:
             # 覆盖语义：先删同 id 再插（标准 SQL，兼容 SQLite/PG）
-            cur.execute("DELETE FROM assets WHERE asset_id=?", (d["asset_id"],))
-            cur.execute(
+            cur.execute(db.adapt_sql("DELETE FROM assets WHERE asset_id=?"), (d["asset_id"],))
+            cur.execute(db.adapt_sql(
                 "INSERT INTO assets (asset_id, name, ip, asset_type, importance, importance_score, "
                 "risk_score, owner, department, location, os, tags, description, source, status, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"),
                 (d["asset_id"], d["name"], d["ip"], d["asset_type"], d["importance"],
                  d["importance_score"], d["risk_score"], d["owner"], d["department"],
                  d["location"], d["os"], json.dumps(d["tags"], ensure_ascii=False), d["description"],

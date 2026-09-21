@@ -108,24 +108,15 @@ def portal_login(username="admin", password="REDACTED-SSP-PWD"):
     return None
 
 
-def sqlite_asset_count():
-    try:
-        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
-        n = c.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
-        c.close()
-        return n
-    except Exception:
-        return 0
-
-
-def sqlite_asset_risk_avg():
-    try:
-        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
-        r = c.execute("SELECT AVG(risk_score) FROM assets").fetchone()[0]
-        c.close()
-        return r or 0
-    except Exception:
-        return 0
+def asset_stats(token):
+    """经 portal API 读资产总数与风险均值（后端无关：SQLite / PostgreSQL）。"""
+    st, d = http("GET", f"{UI}/api/asset/api/assets?size=200", headers=soar_headers(token))
+    if not isinstance(d, dict):
+        return -1, 0
+    items = d.get("items", [])
+    risks = [it.get("risk_score") for it in items if it.get("risk_score") is not None]
+    avg = round(sum(risks) / len(risks), 1) if risks else 0
+    return d.get("total", -1), avg
 
 
 def soar_headers(token):
@@ -328,12 +319,13 @@ def step_a7_approve_block():
 def step_a8_dashboard():
     print("\n▶ A8 大屏四视图（I-07）", flush=True)
     alerts = es_count("ssp-alerts")
-    assets = sqlite_asset_count()
+    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    assets, risk_avg = asset_stats(tok)
     geo = es_search("ssp-alerts", {"size": 0, "aggs": {"g": {"filter": {"exists": {"field": "related.geo_points.geo.location"}}}}})
     geo_n = geo.get("aggregations", {}).get("g", {}).get("doc_count", 0)
     by_grade = es_search("ssp-alerts", {"size": 0, "aggs": {"g": {"terms": {"field": "ssp.alert.grade"}}}})
     grades = {b["key"]: b["doc_count"] for b in by_grade.get("aggregations", {}).get("g", {}).get("buckets", [])}
-    rstat = {"avg": round(sqlite_asset_risk_avg(), 1)}
+    rstat = {"avg": risk_avg}
     # 页面可达（SPA 入口 index.html）
     st_ui, _ = http("GET", f"{UI}/")
     ok = alerts > 0 and assets > 0 and geo_n > 0 and st_ui == 200

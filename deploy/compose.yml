@@ -20,6 +20,7 @@ include:
   - correlator/compose.yml
   - soar/compose.yml
   - portal/compose.yml
+  - postgres/compose.yml
 
 networks:
   ssp:

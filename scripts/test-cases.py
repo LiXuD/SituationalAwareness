@@ -101,15 +101,11 @@ def portal_login(username="admin", password="REDACTED-SSP-PWD"):
     return None
 
 
-def sqlite_asset_count():
-    dbp = os.path.join(ROOT, "data", "ssp.db")
-    try:
-        c = sqlite3.connect(dbp)
-        n = c.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
-        c.close()
-        return n
-    except Exception:
-        return -1
+def asset_total(tok):
+    """经 portal API 读资产总数（后端无关：SQLite / PostgreSQL 均可）。"""
+    st, d = http("GET", f"{UI}/api/asset/api/assets?size=1",
+                 headers={"Cookie": f"ssp_session={tok}"})
+    return d.get("total", -1) if isinstance(d, dict) else -1
 
 
 def rec(tid, name, ok, detail=""):
@@ -281,7 +277,7 @@ def case_n4_excel_import_rollback():
     tok = portal_login("asset", "REDACTED-SSP-PWD")
     if not tok:
         return rec("N4", "Excel 导入回滚", False, "登录失败，无法获取会话")
-    base = sqlite_asset_count()
+    base = asset_total(tok)
     xp = "/tmp/ssp-bad-assets.xlsx"
     ok_gen, err = _make_bad_xlsx(xp)
     if not ok_gen:
@@ -295,7 +291,7 @@ def case_n4_excel_import_rollback():
     st, resp = http("POST", f"{UI}/api/asset/api/assets/import", body, timeout=60,
                     ctype=f"multipart/form-data; boundary={b}",
                     headers={"Cookie": f"ssp_session={tok}"})
-    after = sqlite_asset_count()
+    after = asset_total(tok)
     errs = resp.get("errors", []) if isinstance(resp, dict) else []
     ok = (st == 422 and after == base and len(errs) >= 2)
     detail = (f"HTTP={st}（应 422）；资产数 {base}→{after}（应不变）；"

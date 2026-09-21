@@ -1,0 +1,13 @@
+# PostgreSQL 模式 override —— 把平台业务库从 SQLite 切到 PostgreSQL。
+#
+# 用法：
+#   1) docker compose --profile postgres up -d postgres
+#   2) PLATFORM_DB=postgresql://ssp:REDACTED-PG-PWD@localhost:5433/ssp python3 scripts/init-db.py
+#   3) docker compose -f deploy/compose.yml -f deploy/portal/compose.pg.yml up -d portal
+#
+# 说明：portal 镜像已预装 psycopg，业务代码零改动；本 override 只覆盖 PLATFORM_DB。
+# 相对路径以本文件所在目录为基准：deploy/portal
+services:
+  portal:
+    environment:
+      - PLATFORM_DB=postgresql://ssp:REDACTED-PG-PWD@postgres:5432/ssp
