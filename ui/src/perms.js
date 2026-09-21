@@ -14,6 +14,7 @@ const WRITE = {
   asset: ["admin", "asset_admin"],
   soar: ["admin", "ops"],
   traffic: ["admin", "ops", "analyst"], // 流量查询/导出为只读 GET，这里仅占位
+  users: ["admin"],
 };
 
 // 前端仅用于"隐藏无权限按钮"，真正的鉴权由后端执行

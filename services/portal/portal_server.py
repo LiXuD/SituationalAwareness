@@ -48,6 +48,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import db
 import assets
 import soar
+import users
 
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
@@ -490,6 +491,39 @@ class Handler(BaseHTTPRequestHandler):
                 d = soar.get_draft(sub.split("/")[-1])
                 self._json(200 if d else 404, d or {"error": "not found"})
                 return
+
+        # ---- 账号管理（仅管理员；落业务库）----
+        if path.startswith("/api/users"):
+            if sess["role"] != "admin":
+                self._json(403, {"error": "仅管理员可管理账号", "role": sess["role"]})
+                return
+            sub = path[len("/api/users"):]
+            if sub in ("", "/"):
+                if write:
+                    st, obj = users.create_user(self._json_body())
+                    if st == 200:
+                        self._audit(sess["username"], "user_create",
+                                    obj.get("user", {}).get("username", ""), "")
+                else:
+                    st, obj = users.list_users()
+                self._json(st, obj)
+                return
+            uname = sub.lstrip("/")
+            if self.command == "PUT":
+                st, obj = users.update_user(uname, self._json_body())
+                if st == 200:
+                    self._audit(sess["username"], "user_update", uname, "")
+            elif self.command == "DELETE":
+                st, obj = users.delete_user(uname, sess["username"])
+                if st == 200:
+                    self._audit(sess["username"], "user_delete", uname, "")
+            elif self.command in ("GET", "HEAD"):
+                u = users.get_user(uname)
+                st, obj = (200, u) if u else (404, {"error": "用户不存在"})
+            else:
+                st, obj = 405, {"error": "method not allowed"}
+            self._json(st, obj)
+            return
 
         # ---- 通用透传 + 授权 ----
         parts = path.split("/")

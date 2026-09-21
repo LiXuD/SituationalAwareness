@@ -9,6 +9,7 @@ const NAV = [
   ["/traffic", "⇄", "流量回溯"],
   ["/assets", "🖥", "资产库"],
   ["/soar", "🚫", "拉黑审批"],
+  ["/users", "👤", "账号管理", "admin"],
 ];
 
 const TITLES = {
@@ -17,6 +18,7 @@ const TITLES = {
   "/traffic": "流量回溯",
   "/assets": "统一资产库",
   "/soar": "拉黑审批",
+  "/users": "账号管理",
 };
 
 export function mountApp(root, user) {
@@ -24,7 +26,7 @@ export function mountApp(root, user) {
   <div class="app">
     <aside class="sidebar">
       <div class="brand">🛡 一体化安全<br><span>态势感知平台</span></div>
-      <nav id="nav">${NAV.map(([p, ic, t]) =>
+      <nav id="nav">${NAV.filter(([, , , role]) => !role || role === user.role).map(([p, ic, t]) =>
         `<a data-route="${p}"><span class="ic">${ic}</span>${esc(t)}</a>`).join("")}</nav>
       <div class="sb-foot">v1.0 · POC</div>
     </aside>

@@ -4,6 +4,7 @@ import * as search from "./pages/search.js";
 import * as traffic from "./pages/traffic.js";
 import * as assets from "./pages/assets.js";
 import * as soar from "./pages/soar.js";
+import * as users from "./pages/users.js";
 
 const routes = {
   "/dashboard": dashboard,
@@ -11,6 +12,7 @@ const routes = {
   "/traffic": traffic,
   "/assets": assets,
   "/soar": soar,
+  "/users": users,
 };
 
 let active = null;
