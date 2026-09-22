@@ -13,7 +13,7 @@ export function renderLogin(root, onOk) {
       <input id="p" type="password" autocomplete="current-password" placeholder="••••••"/>
       <button type="submit" id="btn-login">登录</button>
       <div id="lc-err" class="err"></div>
-      <div class="lc-hint">账号由管理员统一创建（scripts/gen-portal-user.py）· 角色：analyst / ops / asset_admin / admin</div>
+      <div class="lc-hint">账号由管理员在「账号管理」页统一创建 · 角色：技术负责人 / 运维值班 / 安全分析师 / 资产管理员</div>
     </form>
   </div>`;
 
