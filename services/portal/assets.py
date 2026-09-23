@@ -56,7 +56,7 @@ def _iso(epoch):
 
 
 def _to_doc(row):
-    """SQLite 行 -> 对外文档（tags JSON 字符串转 list，时间转 ISO）。"""
+    """SQLite 行 -> 对外文档（tags/endpoints JSON 字符串转 list，时间转 ISO）。"""
     try:
         tags = json.loads(row.get("tags") or "[]")
     except Exception:
@@ -75,9 +75,111 @@ def _to_doc(row):
         "os": row.get("os") or "",
         "tags": tags,
         "description": row.get("description") or "",
+        "source": row.get("source") or "manual",
+        "status": row.get("status") or "active",
+        # I-12 观测类字段（人工资产为空）
+        "discovered_by": row.get("discovered_by") or "",
+        "first_seen": _iso(row["first_seen"]) if row.get("first_seen") else "",
+        "last_seen": _iso(row["last_seen"]) if row.get("last_seen") else "",
+        "endpoints": _endpoints_out(row.get("endpoints")),
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
     }
+
+
+def _endpoints_out(raw):
+    """endpoints JSON 字符串 -> list（last_seen 转 ISO）。"""
+    try:
+        eps = json.loads(raw or "[]")
+    except Exception:
+        return []
+    if not isinstance(eps, list):
+        return []
+    out = []
+    for e in eps:
+        if not isinstance(e, dict):
+            continue
+        out.append({
+            "port": e.get("port"), "proto": e.get("proto") or "", "service": e.get("service") or "",
+            "count": int(e.get("count") or 0),
+            "last_seen": _iso(e["last_seen"]) if e.get("last_seen") else "",
+        })
+    return out
+
+
+def _min_ts(a, b):
+    vals = [x for x in (a, b) if x]
+    return min(vals) if vals else None
+
+
+def _max_ts(a, b):
+    vals = [x for x in (a, b) if x]
+    return max(vals) if vals else None
+
+
+def _merge_dby(old, new):
+    s = set(x.strip() for x in (old or "").split(",") if x.strip())
+    if new:
+        s.add(new)
+    return ",".join(sorted(s))
+
+
+def _merge_endpoints(old_raw, new_eps):
+    """按 (port, proto, service) 去重合并，累加 count、取最大 last_seen。"""
+    try:
+        old = json.loads(old_raw or "[]")
+    except Exception:
+        old = []
+    idx = {}
+    for e in (old if isinstance(old, list) else []):
+        if isinstance(e, dict) and e.get("port") is not None:
+            idx[(e.get("port"), e.get("proto") or "", e.get("service") or "")] = dict(e)
+    for e in (new_eps or []):
+        if not isinstance(e, dict) or e.get("port") is None:
+            continue
+        k = (e.get("port"), e.get("proto") or "", e.get("service") or "")
+        if k in idx:
+            idx[k]["count"] = int(idx[k].get("count") or 0) + int(e.get("count") or 0)
+            idx[k]["last_seen"] = _max_ts(idx[k].get("last_seen"), e.get("last_seen"))
+        else:
+            idx[k] = dict(e)
+    return list(idx.values())
+
+
+def merge_discovered(ip, endpoints=None, first_seen=None, last_seen=None, discovered_by="passive"):
+    """I-12：把测绘结果合并进资产库，返回 (asset_id, "created"|"merged")。
+
+    **人工字段（名称/重要度/责任人/风险评分…）一律不改**；只补观测类字段：
+    first_seen / last_seen / discovered_by / endpoints。同 IP 已存在（手工/导入/已发现）则合并到该资产。
+    """
+    now = _now()
+    row = db.query_one("SELECT * FROM assets WHERE ip=? ORDER BY created_at ASC LIMIT 1", (ip,))
+    eps = list(endpoints or [])
+    if row:
+        aid = row["asset_id"]
+        merged = _merge_endpoints(row.get("endpoints"), eps)
+        db.execute(
+            "UPDATE assets SET endpoints=?, first_seen=?, last_seen=?, discovered_by=?, updated_at=? "
+            "WHERE asset_id=?",
+            (json.dumps(merged, ensure_ascii=False),
+             _min_ts(row.get("first_seen"), first_seen),
+             _max_ts(row.get("last_seen"), last_seen),
+             _merge_dby(row.get("discovered_by"), discovered_by),
+             now, aid))
+        return aid, "merged"
+
+    aid = "DISC-" + ip.replace(".", "-").replace(":", "-")
+    while db.query_one("SELECT 1 AS x FROM assets WHERE asset_id=?", (aid,)):
+        aid += "-1"
+    db.execute(
+        "INSERT INTO assets (asset_id, name, ip, asset_type, importance, importance_score, risk_score, "
+        "owner, department, location, os, tags, description, source, status, created_at, updated_at, "
+        "first_seen, last_seen, discovered_by, endpoints) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, "", ip, "其他", "一般", 1, 0, "", "", "", "", "[]", "被动测绘自动发现",
+         "discovered", "active", now, now, first_seen, last_seen, discovered_by,
+         json.dumps(eps, ensure_ascii=False)))
+    return aid, "created"
 
 
 def _bad_ip(ip):

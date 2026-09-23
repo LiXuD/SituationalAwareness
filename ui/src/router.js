@@ -3,6 +3,7 @@ import * as dashboard from "./pages/dashboard.js";
 import * as search from "./pages/search.js";
 import * as traffic from "./pages/traffic.js";
 import * as assets from "./pages/assets.js";
+import * as discovery from "./pages/discovery.js";
 import * as soar from "./pages/soar.js";
 import * as users from "./pages/users.js";
 
@@ -11,6 +12,7 @@ const routes = {
   "/search": search,
   "/traffic": traffic,
   "/assets": assets,
+  "/discovery": discovery,
   "/soar": soar,
   "/users": users,
 };

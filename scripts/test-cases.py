@@ -11,6 +11,14 @@ test-cases.py —— I-09 测试用例（反例/边界）执行器，纯标准�
   N3 落黑失败        执行落黑报错 → 记录失败原因，告警**保持待处置(open)**（PRD §10）
   N4 Excel 导入失败  含非法行 → **整批回滚 + 逐行报错**，存量资产不受影响（PRD §9/§10）
 
+I-12 资产测绘（本脚本追加，正例 A9~A11 + 反例 N5~N7）：
+  A9  被动测绘本轮化  Zeek 连接记录 → 候选池（幂等；越权/公网 IP 不生成候选）
+  A10 采纳           同 IP 已有人工资产 → **合并且不改人工字段**；无同 IP → 新建 discovered 资产
+  A11 忽略           候选置 ignored，后续测绘**不回退**其状态
+  N5  OS 不可达      测绘失败但**不影响存量资产**与平台其它功能
+  N6  越权 IP 采纳   授权网段外候选 → 422 拒绝
+  N7  越权角色       analyst 触发/采纳 → 403（读候选仍 200）
+
 用法：
     python3 scripts/test-cases.py                 # 正例回归 + 全部反例
     python3 scripts/test-cases.py --skip-positive # 只跑反例
@@ -19,6 +27,7 @@ test-cases.py —— I-09 测试用例（反例/边界）执行器，纯标准�
 """
 import argparse
 from http.cookiejar import CookieJar
+import hashlib
 import json
 import os
 import sqlite3
@@ -36,6 +45,7 @@ CORR = os.environ.get("CORR_URL", "http://localhost:8091")
 SOAR = os.environ.get("SOAR_URL", "http://localhost:8092")
 ASSET = os.environ.get("ASSET_URL", "http://localhost:8090")
 UI = os.environ.get("UI_URL", "http://localhost:8088")
+PORTAL = os.environ.get("PORTAL_URL", "http://localhost:8093")   # 统一业务后端（直连，绕过 nginx）
 COMPOSE = "docker compose -f deploy/compose.yml"
 VENV_PY = "/Users/lixd/.workbuddy/binaries/python/envs/default/bin/python"
 PY = VENV_PY if os.path.exists(VENV_PY) else sys.executable
@@ -108,6 +118,107 @@ def asset_total(tok):
     return d.get("total", -1) if isinstance(d, dict) else -1
 
 
+def asset_by_ip(tok, ip):
+    st, d = http("GET", f"{UI}/api/asset/api/assets?q={ip}&size=50",
+                 headers={"Cookie": f"ssp_session={tok}"})
+    return [x for x in ((d or {}).get("items") or []) if x.get("ip") == ip]
+
+
+# --------------------------- I-12 资产测绘辅助 --------------------------- #
+# Docker Desktop(macOS) 绑定挂载下，**宿主直写 SQLite → 容器内定时可见**有约 1s 传播延迟；
+# 直写后需短暂等待，否则 portal（容器内）读到旧快照会误判（实测 1.2s 足够）。
+DB_SYNC_WAIT = 1.2
+
+
+def _ssp_db():
+    return os.path.join(ROOT, "data", "ssp.db")
+
+
+def _sqlite_conn():
+    return sqlite3.connect(_ssp_db())
+
+
+def reset_discovery():
+    """测试隔离：清空候选池 + 清除测绘产生的 discovered 资产 + 复位测绘配置。"""
+    try:
+        c = _sqlite_conn()
+        c.execute("DELETE FROM asset_candidates")
+        c.execute("DELETE FROM assets WHERE source IN ('discovered','scan')")
+        c.execute("DELETE FROM config WHERE key LIKE 'discovery.%'")
+        c.commit()
+        c.close()
+        time.sleep(DB_SYNC_WAIT)
+    except Exception:
+        pass
+
+
+def clear_discovery_config():
+    """测试收尾：移除测绘配置覆写，使默认值（min_obs=3 等）重新生效。"""
+    try:
+        c = _sqlite_conn()
+        c.execute("DELETE FROM config WHERE key LIKE 'discovery.%'")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+
+
+def insert_candidate(ip, port, proto, service, obs=1, status="pending"):
+    """直接向候选池插入一条候选（用于构造“资产库无同 IP”/“越权 IP”等确定性场景）。"""
+    cid = hashlib.sha1(f"{ip}|{port}|{proto}|{service}".encode()).hexdigest()
+    now = int(time.time())
+    c = _sqlite_conn()
+    c.execute("DELETE FROM asset_candidates WHERE id=?", (cid,))
+    c.execute(
+        "INSERT INTO asset_candidates (id, ip, port, proto, service, obs_count, first_seen, last_seen, "
+        "source, evidence, status, asset_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (cid, ip, port, proto, service, obs, now, now, "passive", "synthetic", status, "", now, now))
+    c.commit()
+    c.close()
+    time.sleep(DB_SYNC_WAIT)
+    return cid
+
+
+def delete_candidate(cid):
+    try:
+        c = _sqlite_conn()
+        c.execute("DELETE FROM asset_candidates WHERE id=?", (cid,))
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+
+
+def disc_config(tok, body):
+    return http("PUT", f"{UI}/api/discovery/config", body,
+                headers={"Cookie": f"ssp_session={tok}"})
+
+
+def disc_run(tok):
+    return http("POST", f"{UI}/api/discovery/run", {},
+                headers={"Cookie": f"ssp_session={tok}"})
+
+
+def disc_candidates(tok, status="pending", size=200):
+    st, d = http("GET", f"{UI}/api/discovery/candidates?status={status}&size={size}",
+                 headers={"Cookie": f"ssp_session={tok}"})
+    return (d or {}).get("items", []) if isinstance(d, dict) else []
+
+
+def find_cand(tok, ip, status="pending"):
+    return next((it for it in disc_candidates(tok, status) if it.get("ip") == ip), None)
+
+
+def prime_discovery(admin_tok, run_tok=None):
+    """准备可复现的测绘前置：min_obs=1（演示数据每目标仅 1 条）、窗口 14 天（数据在 09-19）。
+
+    配置项仅 admin 可改（见 portal 路由），触发/采纳可由 asset_admin 执行。
+    """
+    reset_discovery()
+    disc_config(admin_tok, {"discovery.min_obs": "1", "discovery.window_minutes": "20160"})
+    return disc_run(run_tok or admin_tok)
+
+
 def rec(tid, name, ok, detail=""):
     RESULTS.append((tid, name, bool(ok), detail))
     print(f"  [{'PASS' if ok else 'FAIL'}] {tid} {name}" + (f" —— {detail}" if detail else ""), flush=True)
@@ -127,6 +238,7 @@ def clear_drafts():
         c.execute("UPDATE blacklist SET status='inactive'")
         c.commit()
         c.close()
+        time.sleep(DB_SYNC_WAIT)      # 宿主直写 → 容器可见有约 1s 延迟，须等待
     except Exception:
         pass
 
@@ -299,8 +411,163 @@ def case_n4_excel_import_rollback():
     return rec("N4", "Excel 导入回滚", ok, detail)
 
 
-CASES = {"N1": case_n1_probe_down, "N2": case_n2_approval_timeout,
-         "N3": case_n3_block_failure, "N4": case_n4_excel_import_rollback}
+# =========================================================================== #
+# I-12 资产测绘（被动识别 → 候选池 → 采纳/忽略）
+# =========================================================================== #
+def case_a9_discovery_run():
+    print("\n▶ A9 资产测绘本轮化（Zeek 连接记录 → 候选池，幂等）", flush=True)
+    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("A9", "资产测绘本轮化", False, "登录失败")
+    reset_discovery()                        # 清空候选池（隔离），随后本案例自建
+    st0, _c0 = disc_config(tok, {"discovery.min_obs": "1", "discovery.window_minutes": "20160"})
+    if st0 != 200:
+        return rec("A9", "资产测绘本轮化", False, f"配置失败 HTTP={st0}")
+    st, d = disc_run(tok)                    # 首次测绘：应新增 2 条候选
+    items = disc_candidates(tok, "pending")
+    ips = {it["ip"] for it in items}
+    internal = {"10.0.0.20", "10.20.30.40"}
+    leaked = sorted(ips - internal)          # 公网/越权 IP 不应成为候选
+    st2, d2 = disc_run(tok)                  # 幂等：重复测绘不重复建候选
+    ok = (st == 200 and d.get("created") == 2 and d.get("scanned_hosts") == 2
+          and internal <= ips and not leaked
+          and d2.get("created") == 0 and d2.get("updated") == 2)
+    detail = (f"run HTTP={st} created={d.get('created')} hosts={d.get('scanned_hosts')}；"
+              f"候选={sorted(ips)}；越权候选={leaked}（应空）；"
+              f"二次 run created={d2.get('created')}/updated={d2.get('updated')}（应 0/2 幂等）")
+    return rec("A9", "资产测绘本轮化", ok, detail)
+
+
+def case_a10_discovery_adopt():
+    print("\n▶ A10 采纳：同 IP 已有手工资产→合并（不改人工字段）；无同 IP→新建", flush=True)
+    admin = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("asset", "REDACTED-SSP-PWD")      # 采纳由资产管理员执行（校验角色矩阵）
+    if not admin or not tok:
+        return rec("A10", "资产测绘采纳", False, "登录失败")
+    cand = find_cand(tok, "10.0.0.20")
+    if not cand:
+        prime_discovery(admin, tok)
+        cand = find_cand(tok, "10.0.0.20")
+    if not cand:
+        return rec("A10", "资产测绘采纳", False, "未找到 10.0.0.20 候选（前置失败）")
+    h = {"Cookie": f"ssp_session={tok}"}
+    # —— 合并路径：AST-101 是既有手工资产（ip=10.0.0.20）——
+    st, d = http("POST", f"{UI}/api/discovery/adopt", {"ids": [cand["id"]]}, headers=h)
+    rows = asset_by_ip(tok, "10.0.0.20")
+    ast = next((x for x in rows if x.get("asset_id") == "AST-101"), None)
+    merge_ok = (st == 200 and d.get("merged") == 1 and len(rows) == 1 and ast
+                and ast.get("name") == "生产Web服务器-web-prod-01"
+                and ast.get("importance") == "重要" and ast.get("owner") == "运维组"
+                and "passive" in (ast.get("discovered_by") or "")
+                and any(e.get("port") == 22 for e in (ast.get("endpoints") or [])))
+    # —— 新建路径：合成一个资产库无同 IP 的候选 ——
+    cid = insert_candidate("10.20.30.55", 8443, "tcp", "https", 5)
+    st2, d2 = http("POST", f"{UI}/api/discovery/adopt", {"ids": [cid]}, headers=h)
+    new = next(iter(asset_by_ip(tok, "10.20.30.55")), None)
+    create_ok = (d2.get("created") == 1 and new and new.get("source") == "discovered"
+                 and any(e.get("port") == 8443 for e in (new.get("endpoints") or [])))
+    ok = merge_ok and create_ok
+    detail = (f"合并：HTTP={st} merged={d.get('merged')} 同IP资产数={len(rows)}；"
+              f"人工字段保留 name={ast and ast.get('name')} importance={ast and ast.get('importance')} "
+              f"owner={ast and ast.get('owner')}；discovered_by={ast and ast.get('discovered_by')}；"
+              f"新建：created={d2.get('created')} source={new and new.get('source')} "
+              f"ports={[e.get('port') for e in ((new or {}).get('endpoints') or [])]}")
+    return rec("A10", "资产测绘采纳", ok, detail)
+
+
+def case_a11_discovery_ignore():
+    print("\n▶ A11 忽略候选（后续测绘不回退其状态）", flush=True)
+    admin = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    if not admin or not tok:
+        return rec("A11", "资产测绘忽略", False, "登录失败")
+    cand = find_cand(tok, "10.20.30.40")
+    if not cand:
+        prime_discovery(admin, tok)
+        cand = find_cand(tok, "10.20.30.40")
+    if not cand:
+        return rec("A11", "资产测绘忽略", False, "未找到 10.20.30.40 候选（前置失败）")
+    h = {"Cookie": f"ssp_session={tok}"}
+    st, d = http("POST", f"{UI}/api/discovery/ignore", {"ids": [cand["id"]]}, headers=h)
+    disc_run(tok)                            # 该 (ip,port) 仍在流量中 → 不得复位为 pending
+    row = next((it for it in disc_candidates(tok, "all") if it.get("id") == cand["id"]), None)
+    st3, _d3 = http("POST", f"{UI}/api/discovery/adopt", {"ids": [cand["id"]]}, headers=h)
+    ok = (st == 200 and d.get("ignored") == 1 and row
+          and row.get("status") == "ignored" and st3 == 409)
+    detail = (f"ignore HTTP={st} 已忽略={d.get('ignored')}；再测绘后状态={row and row.get('status')}（应 ignored）；"
+              f"再采纳 HTTP={st3}（应 409 非待审）")
+    return rec("A11", "资产测绘忽略", ok, detail)
+
+
+def case_n5_discovery_os_down():
+    print("\n▶ N5 测绘：OpenSearch 不可达（失败不影响存量资产）", flush=True)
+    ov = "/tmp/ssp-test-osdown.yml"
+    with open(ov, "w") as f:
+        f.write("services:\n  portal:\n    environment:\n      OPENSEARCH_URL: http://127.0.0.1:9\n")
+    sh(f"{COMPOSE} -f {ov} up -d --force-recreate portal")
+    ready = wait_port(f"{PORTAL}/health")           # 直连 portal（/health 不经 nginx）
+    tok = None
+    for _ in range(15):                              # nginx 动态解析最长 10s 缓存，登录稍重试
+        tok = portal_login("asset", "REDACTED-SSP-PWD")
+        if tok:
+            break
+        time.sleep(1)
+    if not ready or not tok:
+        sh(f"{COMPOSE} up -d --force-recreate portal")
+        wait_port(f"{PORTAL}/health")
+        return rec("N5", "测绘:OS不可达", False, f"portal 未能就绪（ready={ready} login={bool(tok)}）")
+    base = asset_total(tok)
+    st, d = disc_run(tok)
+    after = asset_total(tok)
+    ok = (st == 502 and after == base)
+    detail = (f"HTTP={st}（应 502）；资产数 {base}→{after}（应不变）；"
+              f"error={d.get('error') if isinstance(d, dict) else d}")
+    sh(f"{COMPOSE} up -d --force-recreate portal")      # 还原
+    wait_port(f"{PORTAL}/health")
+    return rec("N5", "测绘:OS不可达", ok, detail)
+
+
+def case_n6_discovery_out_of_range():
+    print("\n▶ N6 测绘：授权网段外候选 → 采纳被拒（422）", flush=True)
+    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("N6", "测绘:越权IP拒绝", False, "登录失败")
+    h = {"Cookie": f"ssp_session={tok}"}
+    cid = insert_candidate("8.8.8.8", 53, "udp", "dns", 9, status="pending")
+    st, d = http("POST", f"{UI}/api/discovery/adopt", {"ids": [cid]}, headers=h)
+    row = next((it for it in disc_candidates(tok, "all") if it.get("id") == cid), None)
+    delete_candidate(cid)
+    errs = (d or {}).get("errors", []) if isinstance(d, dict) else []
+    ok = (st == 422 and bool(errs) and row and row.get("status") == "pending")
+    detail = f"HTTP={st}（应 422）；errors={errs}；候选仍为 {row and row.get('status')}（应 pending，未写入）"
+    return rec("N6", "测绘:越权IP拒绝", ok, detail)
+
+
+def case_n7_discovery_forbidden():
+    print("\n▶ N7 测绘：analyst 无写权限（403），读候选仍 200", flush=True)
+    tok = portal_login("analyst", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("N7", "测绘:越权角色403", False, "登录失败")
+    h = {"Cookie": f"ssp_session={tok}"}
+    st1, _ = http("POST", f"{UI}/api/discovery/run", {}, headers=h)
+    st2, _ = http("POST", f"{UI}/api/discovery/adopt", {"ids": ["x"]}, headers=h)
+    st3, _ = http("GET", f"{UI}/api/discovery/candidates?status=pending", headers=h)
+    ok = (st1 == 403 and st2 == 403 and st3 == 200)
+    return rec("N7", "测绘:越权角色403", ok, f"run={st1} adopt={st2}（应 403）；读候选={st3}（应 200）")
+
+
+CASES = {
+    "A9": case_a9_discovery_run,
+    "A10": case_a10_discovery_adopt,
+    "A11": case_a11_discovery_ignore,
+    "N1": case_n1_probe_down,
+    "N2": case_n2_approval_timeout,
+    "N3": case_n3_block_failure,
+    "N4": case_n4_excel_import_rollback,
+    "N5": case_n5_discovery_os_down,
+    "N6": case_n6_discovery_out_of_range,
+    "N7": case_n7_discovery_forbidden,
+}
 
 
 def main():
@@ -323,6 +590,8 @@ def main():
             fn()
         except Exception as e:
             rec(tid, "异常", False, f"{type(e).__name__}: {e}")
+
+    clear_discovery_config()          # 收尾：移除测绘配置覆写，恢复默认（min_obs=3 等）
 
     print("\n" + "=" * 74)
     npass = sum(1 for r in RESULTS if r[2])

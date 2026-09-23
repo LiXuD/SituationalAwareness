@@ -12,7 +12,7 @@ PY := python3
 .DEFAULT_GOAL := help
 
 .PHONY: help init up down ps logs templates demo verify health clean \
-        pg-up pg-init pg-portal pg-stop lint
+        pg-up pg-init pg-portal pg-stop lint discover discovery-status
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) | \
@@ -53,6 +53,13 @@ health: ## 各服务健康检查
 clean: ## 清空运行时回放暂存（logs/demo-stage、logs 根）
 	rm -f logs/*/*.json logs/*/*.log 2>/dev/null || true
 	@echo "已清理运行时暂存（保留 logs/demo 演示源）"
+
+# ----------------------------- 资产测绘（I-12） ----------------------------- #
+discover: ## 触发一次资产被动测绘（Zeek 连接日志 → 候选池）
+	$(PY) scripts/discovery-run.py
+
+discovery-status: ## 查看资产测绘候选统计
+	$(PY) scripts/discovery-run.py --stats
 
 # ----------------------------- PostgreSQL（可选） ----------------------------- #
 pg-up: ## 启动 PostgreSQL 容器

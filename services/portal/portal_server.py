@@ -25,12 +25,14 @@ portal_server.py —— 平台统一后端（BFF）+ 统一登录 / 会话 / 角
   /api/corr/*             关联分析
   /api/asset/*            统一资产库
   /api/soar/*             SOAR 拉黑审批
+  /api/discovery/*        资产测绘（候选池 / 采纳 / 忽略 / 配置 / 触发）
   GET  /health            平台与上游连通性
 
 环境变量
 --------
   PORTAL_PORT 8093 | USERS_FILE /srv/users.json | SESSION_TTL_SECONDS 28800
   OPENSEARCH_URL | CORRELATOR_URL | ASSET_URL | SOAR_URL | ARKIME_URL/ARKIME_USER/ARKIME_PASS
+  DISCOVERY_INTERVAL_SECONDS 3600（资产测绘定时；0=关闭）
 """
 import hashlib
 import hmac
@@ -72,6 +74,7 @@ WRITE_ROLES = {                      # 写操作授权（未列出的模块默�
     "corr":    {"admin"},
     "asset":   {"asset_admin", "admin"},
     "soar":    {"ops", "admin"},
+    "discovery": {"asset_admin", "admin"},   # I-12 资产测绘：采纳/忽略/触发
 }
 
 _PROTO_MAP = {"6": "tcp", "tcp": "tcp", "17": "udp", "udp": "udp", "1": "icmp", "icmp": "icmp"}
@@ -525,6 +528,73 @@ class Handler(BaseHTTPRequestHandler):
             self._json(st, obj)
             return
 
+        # ---- 资产测绘（I-12：被动识别 → 候选池 → 采纳/忽略；落业务库）----
+        if path.startswith("/api/discovery"):
+            import discovery
+            sub = path[len("/api/discovery"):]
+            disc_write = WRITE_ROLES.get("discovery", {"admin"})
+
+            def _need_write():
+                if sess["role"] in disc_write:
+                    return True
+                self._json(403, {"error": f"当前角色「{ROLE_LABEL.get(sess['role'], sess['role'])}」"
+                                          f"无权执行该操作", "role": sess["role"],
+                                 "required": sorted(disc_write)})
+                return False
+
+            if sub == "/candidates" and not write:
+                page = max(1, int(q.get("page", "1") or "1"))
+                size = min(200, max(1, int(q.get("size", "50") or "50")))
+                st, obj = discovery.list_candidates(q.get("status", "pending").strip(),
+                                                    q.get("q", "").strip(),
+                                                    q.get("source", "").strip(), page, size)
+                self._json(st, obj)
+                return
+            if sub == "/stats" and not write:
+                self._json(*discovery.stats())
+                return
+            if sub == "/config":
+                if not write:
+                    self._json(200, discovery.get_config())
+                    return
+                if sess["role"] != "admin":
+                    self._json(403, {"error": "仅管理员可修改测绘配置", "role": sess["role"]})
+                    return
+                st, obj = discovery.set_config(self._json_body())
+                if st == 200:
+                    self._audit(sess["username"], "PUT", "/api/discovery/config", "")
+                self._json(st, obj)
+                return
+            if sub == "/run" and write:
+                if not _need_write():
+                    return
+                b = self._json_body()
+                st, obj = discovery.run(b.get("window_minutes"))
+                if st == 200:
+                    self._audit(sess["username"], "POST", "/api/discovery/run",
+                                "新增候选 %s / 刷新 %s" % (obj.get("created"), obj.get("updated")))
+                self._json(st, obj)
+                return
+            if sub == "/adopt" and write:
+                if not _need_write():
+                    return
+                st, obj = discovery.adopt(self._json_body().get("ids") or [], sess["username"])
+                if st == 200:
+                    self._audit(sess["username"], "discovery_adopt", "/api/discovery/adopt",
+                                "采纳 %s（新增 %s / 合并 %s）" % (obj.get("adopted"), obj.get("created"),
+                                                                obj.get("merged")))
+                self._json(st, obj)
+                return
+            if sub == "/ignore" and write:
+                if not _need_write():
+                    return
+                st, obj = discovery.ignore(self._json_body().get("ids") or [], sess["username"])
+                if st == 200:
+                    self._audit(sess["username"], "discovery_ignore", "/api/discovery/ignore",
+                                "忽略 %s" % obj.get("ignored"))
+                self._json(st, obj)
+                return
+
         # ---- 通用透传 + 授权 ----
         parts = path.split("/")
         if len(parts) >= 4 and parts[1] == "api" and parts[2] in UPSTREAMS:
@@ -549,6 +619,32 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found: %s" % path})
 
 
+def _start_discovery_timer():
+    """I-12：后台定时执行资产测绘（默认每小时；DISCOVERY_INTERVAL_SECONDS=0 关闭）。"""
+    try:
+        interval = int(os.environ.get("DISCOVERY_INTERVAL_SECONDS", "3600"))
+    except ValueError:
+        interval = 3600
+    if interval <= 0:
+        print("[portal] 资产测绘定时任务：已关闭（DISCOVERY_INTERVAL_SECONDS=0）", flush=True)
+        return
+    import threading
+    import discovery
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                st, obj = discovery.run()
+                print(f"[portal] 资产测绘定时执行：HTTP {st} 主机 {obj.get('scanned_hosts')} "
+                      f"新增 {obj.get('created')} 刷新 {obj.get('updated')}", flush=True)
+            except Exception as e:
+                print(f"[portal] 资产测绘定时执行失败：{type(e).__name__}: {e}", flush=True)
+
+    threading.Thread(target=loop, name="discovery", daemon=True).start()
+    print(f"[portal] 资产测绘定时任务已启动：每 {interval}s", flush=True)
+
+
 def main():
     try:
         n = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
@@ -559,6 +655,7 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", PORTAL_PORT), Handler)
     print(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}", flush=True)
     print(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}", flush=True)
+    _start_discovery_timer()
     srv.serve_forever()
 
 

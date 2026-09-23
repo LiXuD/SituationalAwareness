@@ -140,17 +140,61 @@ def run_in_transaction(fn):
 
 
 def init_schema():
-    """建表（幂等）。"""
+    """建表（幂等）+ 补列迁移（幂等）。"""
     if _BACKEND == "sqlite":
         with _lock:
             c = _get_sqlite()
             c.executescript(SCHEMA_SQL)
             c.commit()
+    else:
+        c = _get_pg()
+        cur = c.cursor()
+        for stmt in [s for s in SCHEMA_SQL.split(";") if s.strip()]:
+            cur.execute(stmt)
+        c.commit()
+    _ensure_columns()
+
+
+def _table_columns(cur, table):
+    """返回某表现有列名集合（SQLite / PostgreSQL 通用）。"""
+    if _BACKEND == "sqlite":
+        cur.execute("PRAGMA table_info(%s)" % table)   # table 为常量，无注入面
+        out = set()
+        for r in cur.fetchall():
+            try:
+                out.add(r["name"])
+            except (TypeError, IndexError, KeyError):
+                out.add(r[1])
+        return out
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", (table,))
+    out = set()
+    for r in cur.fetchall():
+        out.add(r["column_name"] if isinstance(r, dict) else r[0])
+    return out
+
+
+def _ensure_columns():
+    """为既有库补 I-12 新增列（幂等：缺哪列补哪列）。
+
+    注意：本函数自己加锁/开连接，**不可**在持有 _lock 的语句块内调用
+    （threading.Lock 非可重入）。
+    """
+    if _BACKEND == "sqlite":
+        with _lock:
+            c = _get_sqlite()
+            cur = c.cursor()
+            have = _table_columns(cur, "assets")
+            for col, ddl in ASSET_EXTRA_COLUMNS.items():
+                if col not in have:
+                    cur.execute("ALTER TABLE assets ADD COLUMN %s %s" % (col, ddl))
+            c.commit()
         return
     c = _get_pg()
     cur = c.cursor()
-    for stmt in [s for s in SCHEMA_SQL.split(";") if s.strip()]:
-        cur.execute(stmt)
+    have = _table_columns(cur, "assets")
+    for col, ddl in ASSET_EXTRA_COLUMNS.items():
+        if col not in have:
+            cur.execute("ALTER TABLE assets ADD COLUMN %s %s" % (col, ddl))
     c.commit()
 
 
@@ -259,4 +303,33 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_assets_ip ON assets(ip);
 CREATE INDEX IF NOT EXISTS idx_drafts_status ON soar_drafts(status);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+
+-- I-12 资产测绘自动化：候选池（被动/主动发现 → 人工采纳/忽略 → 合并入 assets）
+CREATE TABLE IF NOT EXISTS asset_candidates (
+    id           TEXT PRIMARY KEY,                 -- sha1("ip|port|proto|service")，幂等
+    ip           TEXT NOT NULL,
+    port         INTEGER,
+    proto        TEXT NOT NULL DEFAULT '',
+    service      TEXT NOT NULL DEFAULT '',
+    obs_count    INTEGER NOT NULL DEFAULT 0,
+    first_seen   INTEGER,
+    last_seen    INTEGER,
+    source       TEXT NOT NULL DEFAULT 'passive',  -- passive | active
+    evidence     TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'pending',  -- pending | adopted | ignored
+    asset_id     TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cand_status ON asset_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_cand_ip ON asset_candidates(ip);
 """
+
+# I-12：assets 表新增的「观测类」列（幂等补列；人工字段不受影响）
+ASSET_EXTRA_COLUMNS = {
+    "first_seen":    "INTEGER",
+    "last_seen":     "INTEGER",
+    "discovered_by": "TEXT NOT NULL DEFAULT ''",
+    "endpoints":     "TEXT NOT NULL DEFAULT '[]'",
+}

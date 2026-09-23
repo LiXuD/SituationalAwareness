@@ -13,6 +13,8 @@
 | **采集 / 回放** | | |
 | `replay-demo.sh` | 回放演示数据（探针 → 事件） | `make demo` |
 | `verify-ingest.sh` | 校验探针事件入湖 | `make health` |
+| **资产测绘（I-12）** | | |
+| `discovery-run.py` | 触发一次资产被动测绘（经 portal API）；`--stats` 看候选统计 | `make discover` / `make discovery-status` |
 | **Arkime** | | |
 | `arkime-init.sh` | 初始化 Arkime（视图/用户） | — |
 | `arkime-import.sh` | 导入 PCAP | — |
@@ -27,7 +29,7 @@
 | `gen-sample-pcap.py` | 生成示例 PCAP | — |
 | **校验 / 验收** | | |
 | `acceptance-demo.py` | I-08 端到端正例（A1~A8） | `make verify` |
-| `test-cases.py` | I-09 反例/边界（N1~N4）+ 正例回归 | `make verify` |
+| `test-cases.py` | I-09 反例/边界（N1~N4）+ I-12 资产测绘（A9~A11 / N5~N7）+ 正例回归 | `make verify` |
 | **其他** | | |
 | `run-correlator.sh` | 本地直接跑关联引擎（开发用） | — |
 | `search.sh` | 命令行检索 OpenSearch | — |
