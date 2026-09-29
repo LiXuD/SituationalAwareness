@@ -770,10 +770,16 @@ def upsert_alerts(alert_docs):
             # 生成/截止时刻必须"钉住"：SLA 从告警首次生成计时，重复关联不得重置时钟
             na["generated_at"] = pa.get("generated_at", na["generated_at"])
             na["due_at"] = pa.get("due_at", na["due_at"])
-            # I-14：引擎集合并集；流式时延保留已有实测值（首次写出时才有意义）
+            # I-14：引擎集合并集；流式时延保留"首次检出"值（取最小）——
+            # 同一告警会被窗口反复评估并 upsert，若直接用新值，时延会随评估次数越写越大，
+            # 失去 SLO 意义。取 min 后该字段恒为"事件入 Kafka → 首次判定为该告警"的毫秒数。
             na["engines"] = sorted(set((pa.get("engines") or []) + (na.get("engines") or [])))
-            if na.get("stream_latency_ms") is None:
-                na["stream_latency_ms"] = pa.get("stream_latency_ms")
+            _prev_lat = pa.get("stream_latency_ms")
+            _new_lat = na.get("stream_latency_ms")
+            if _prev_lat is not None and _new_lat is not None:
+                na["stream_latency_ms"] = min(_prev_lat, _new_lat)
+            elif _new_lat is None:
+                na["stream_latency_ms"] = _prev_lat
             # 合并统计
             na["last_seen_at"] = doc["ssp"]["alert"]["generated_at"]
             na["event_count"] = max(doc["related"]["event_count"], get_in(prev, "related.event_count", 0))
