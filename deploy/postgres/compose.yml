@@ -1,12 +1,10 @@
 # PostgreSQL（可选后端）—— 业务量大时把平台业务库从 SQLite 切到 PG
 #
 # 默认**不启动**（profile: postgres）。启用步骤：
-#   1) 启动 PG：      docker compose --profile postgres up -d postgres
-#   2) 初始化业务表： PLATFORM_DB=postgresql://ssp:REDACTED-PG-PWD@localhost:5432/ssp \
-#                     python3 scripts/init-db.py
-#   3) 切 portal：    把 deploy/portal/compose.yml 的 PLATFORM_DB 设为
-#                     postgresql://ssp:REDACTED-PG-PWD@postgres:5432/ssp 并重启 portal
-#   （portal 镜像已预装 psycopg 驱动，业务代码零改动）
+#   1) 启动 PG：      make pg-up                 （口令取自 deploy/.env）
+#   2) 初始化业务表： make pg-init
+#   3) 切 portal：     make pg-portal
+#   （portal 镜像已预装 psycopg 驱动，业务代码零改动；DSN 由脚本用 deploy/.env 拼装）
 #
 # 相对路径以本文件所在目录为基准：deploy/postgres
 services:
@@ -15,13 +13,14 @@ services:
     container_name: ssp-postgres
     profiles: ["postgres"]
     environment:
-      - POSTGRES_USER=ssp
-      - POSTGRES_PASSWORD=REDACTED-PG-PWD
-      - POSTGRES_DB=ssp
+      # 口令取自 deploy/.env（compose 自动读取该目录下的 .env）——仓库内不留默认口令
+      - POSTGRES_USER=${POSTGRES_USER:-ssp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?未设置 PostgreSQL 口令：请在 deploy/.env 配置 POSTGRES_PASSWORD（可先执行 make init）}
+      - POSTGRES_DB=${POSTGRES_DB:-ssp}
     volumes:
       - pg-data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"          # 宿主 5433（避免与宿主已有 PG 的 5432 冲突）；容器间走 postgres:5432
+      - "${POSTGRES_PORT:-5433}:5432"   # 宿主端口（默认 5433，避免与宿主已有 PG 的 5432 冲突）；容器间走 postgres:5432
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ssp -d ssp"]
       interval: 10s

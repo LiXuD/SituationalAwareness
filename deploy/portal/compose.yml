@@ -26,8 +26,10 @@ services:
       - ASSET_URL=http://asset:8090
       - SOAR_URL=http://soar:8092
       - ARKIME_URL=http://arkime:8005         # 容器网络内直连 Arkime Viewer
+      # 口令来自 deploy/.env（compose 自动读取本目录下的 .env）——仓库内不留任何默认口令；
+      # 未配置时**直接报错**（而非退化成弱口令）。首次使用：make init / cp deploy/.env.example deploy/.env
       - ARKIME_USER=${ARKIME_ADMIN_USER:-admin}
-      - ARKIME_PASS=${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}
+      - ARKIME_PASS=${ARKIME_ADMIN_PASSWORD:?未设置 Arkime 口令：请在 deploy/.env 配置 ARKIME_ADMIN_PASSWORD（可先执行 make init）}
     volumes:
       # 服务代码（只读）：services/portal -> /srv
       - ../../services/portal:/srv:ro

@@ -60,7 +60,8 @@ COOKIE_NAME = os.environ.get("SESSION_COOKIE", "ssp_session")
 
 ARKIME_URL = os.environ.get("ARKIME_URL", "http://arkime:8005").rstrip("/")
 ARKIME_USER = os.environ.get("ARKIME_USER", "admin")
-ARKIME_PASS = os.environ.get("ARKIME_PASS", "REDACTED-ARKIME-PWD")
+# Arkime 口令只从环境注入（compose 由 deploy/.env 插值）——**代码里不留任何默认口令**
+ARKIME_PASS = os.environ.get("ARKIME_PASS", "")
 
 UPSTREAMS = {
     "os":    os.environ.get("OPENSEARCH_URL", "http://opensearch:9200").rstrip("/"),
@@ -739,6 +740,9 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", PORTAL_PORT), Handler)
     print(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}", flush=True)
     print(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}", flush=True)
+    if not ARKIME_PASS:
+        print("[portal] ⚠️ 未提供 ARKIME_PASS —— 流量回溯（/api/traffic/*）会因 Arkime 鉴权失败返回 401。"
+              "请在 deploy/.env 配置 ARKIME_ADMIN_PASSWORD 后重启 portal（可先执行 make init）。", flush=True)
     _start_discovery_timer()
     _start_branch_timer()
     srv.serve_forever()

@@ -59,6 +59,9 @@ import urllib.error
 import urllib.request
 import uuid
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _env  # noqa: E402   （加载 deploy/.env；仓库内不保存口令）
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OS = os.environ.get("OS_URL", "http://localhost:9200")
 CORR = os.environ.get("CORR_URL", "http://localhost:8091")
@@ -114,8 +117,12 @@ def es_count(index):
     return d.get("count", 0) if isinstance(d, dict) else 0
 
 
-def portal_login(username="admin", password="REDACTED-SSP-PWD"):
-    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
+def portal_login(username="admin", password=None):
+    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。
+
+    口令来自 `deploy/.env`（`SSP_<账号>_PASSWORD` 优先，回退 `SSP_DEFAULT_PASSWORD`）。
+    """
+    password = password or _env.account_password(username)
     jar = CookieJar()
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPCookieProcessor(jar),
@@ -387,7 +394,7 @@ def case_n1_probe_down():
 
 def case_n2_approval_timeout():
     print("\n▶ N2 审批超时（草稿保留、不自动提交）", flush=True)
-    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    tok = portal_login("ops")
     if not tok:
         return rec("N2", "审批超时", False, "登录失败")
     hdrs = {"Cookie": f"ssp_session={tok}"}
@@ -419,7 +426,7 @@ def case_n3_block_failure():
                 "      - SSP_HOST_PID=999999\n")     # 非法宿主 PID → nsenter 必失败
     sh(f"{COMPOSE} -f {ov} up -d --force-recreate soar")
     wait_port(f"{SOAR}/health")
-    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    tok = portal_login("ops")
     if not tok:
         sh(f"{COMPOSE} up -d --force-recreate soar")
         return rec("N3", "落黑失败", False, "登录失败")
@@ -479,7 +486,7 @@ wb.save(sys.argv[1])
 
 def case_n4_excel_import_rollback():
     print("\n▶ N4 Excel 导入失败（整批回滚 + 逐行报错）", flush=True)
-    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    tok = portal_login("asset")
     if not tok:
         return rec("N4", "Excel 导入回滚", False, "登录失败，无法获取会话")
     base = asset_total(tok)
@@ -509,7 +516,7 @@ def case_n4_excel_import_rollback():
 # =========================================================================== #
 def case_a9_discovery_run():
     print("\n▶ A9 资产测绘本轮化（Zeek 连接记录 → 候选池，幂等）", flush=True)
-    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("admin")
     if not tok:
         return rec("A9", "资产测绘本轮化", False, "登录失败")
     reset_discovery()                        # 清空候选池（隔离），随后本案例自建
@@ -533,8 +540,8 @@ def case_a9_discovery_run():
 
 def case_a10_discovery_adopt():
     print("\n▶ A10 采纳：同 IP 已有手工资产→合并（不改人工字段）；无同 IP→新建", flush=True)
-    admin = portal_login("admin", "REDACTED-SSP-PWD")
-    tok = portal_login("asset", "REDACTED-SSP-PWD")      # 采纳由资产管理员执行（校验角色矩阵）
+    admin = portal_login("admin")
+    tok = portal_login("asset")      # 采纳由资产管理员执行（校验角色矩阵）
     if not admin or not tok:
         return rec("A10", "资产测绘采纳", False, "登录失败")
     cand = find_cand(tok, "10.0.0.20")
@@ -570,8 +577,8 @@ def case_a10_discovery_adopt():
 
 def case_a11_discovery_ignore():
     print("\n▶ A11 忽略候选（后续测绘不回退其状态）", flush=True)
-    admin = portal_login("admin", "REDACTED-SSP-PWD")
-    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    admin = portal_login("admin")
+    tok = portal_login("asset")
     if not admin or not tok:
         return rec("A11", "资产测绘忽略", False, "登录失败")
     cand = find_cand(tok, "10.20.30.40")
@@ -601,7 +608,7 @@ def case_n5_discovery_os_down():
     ready = wait_port(f"{PORTAL}/health")           # 直连 portal（/health 不经 nginx）
     tok = None
     for _ in range(15):                              # nginx 动态解析最长 10s 缓存，登录稍重试
-        tok = portal_login("asset", "REDACTED-SSP-PWD")
+        tok = portal_login("asset")
         if tok:
             break
         time.sleep(1)
@@ -622,7 +629,7 @@ def case_n5_discovery_os_down():
 
 def case_n6_discovery_out_of_range():
     print("\n▶ N6 测绘：授权网段外候选 → 采纳被拒（422）", flush=True)
-    tok = portal_login("asset", "REDACTED-SSP-PWD")
+    tok = portal_login("asset")
     if not tok:
         return rec("N6", "测绘:越权IP拒绝", False, "登录失败")
     h = {"Cookie": f"ssp_session={tok}"}
@@ -638,7 +645,7 @@ def case_n6_discovery_out_of_range():
 
 def case_n7_discovery_forbidden():
     print("\n▶ N7 测绘：analyst 无写权限（403），读候选仍 200", flush=True)
-    tok = portal_login("analyst", "REDACTED-SSP-PWD")
+    tok = portal_login("analyst")
     if not tok:
         return rec("N7", "测绘:越权角色403", False, "登录失败")
     h = {"Cookie": f"ssp_session={tok}"}
@@ -675,7 +682,7 @@ def case_a13_branch_tagging():
 
 def case_a14_branch_registry():
     print("\n▶ A14 分支登记与汇聚探测（在线判定 / 停用判定）", flush=True)
-    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("admin")
     if not tok:
         return rec("A14", "分支登记与探测", False, "登录失败")
     h = {"Cookie": f"ssp_session={tok}"}
@@ -703,7 +710,7 @@ def case_a14_branch_registry():
 
 def case_a15_branch_isolation():
     print("\n▶ A15 分支独立（某分支断链不影响其他分支）", flush=True)
-    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("admin")
     if not tok:
         return rec("A15", "分支独立", False, "登录失败")
     h = {"Cookie": f"ssp_session={tok}"}
@@ -733,7 +740,7 @@ def case_a15_branch_isolation():
 
 def case_n10_unregistered_branch():
     print("\n▶ N10 未登记分支（提示 unregistered，不阻断入库）", flush=True)
-    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("admin")
     if not tok:
         return rec("N10", "未登记分支提示", False, "登录失败")
     h = {"Cookie": f"ssp_session={tok}"}
@@ -753,7 +760,7 @@ def case_n10_unregistered_branch():
 
 def case_n11_branch_probe_os_down():
     print("\n▶ N11 分支探测：OpenSearch 不可达（探测失败但不误改状态）", flush=True)
-    tok0 = portal_login("admin", "REDACTED-SSP-PWD")
+    tok0 = portal_login("admin")
     if not tok0:
         return rec("N11", "分支探测:OS不可达", False, "登录失败")
     st0, d0 = branch_list(tok0)
@@ -766,7 +773,7 @@ def case_n11_branch_probe_os_down():
     ready = wait_port(f"{PORTAL}/health")
     tok = None
     for _ in range(15):
-        tok = portal_login("admin", "REDACTED-SSP-PWD")
+        tok = portal_login("admin")
         if tok:
             break
         time.sleep(1)
@@ -1230,6 +1237,10 @@ def main():
     ap.add_argument("--only", default=None, help="只跑某个用例，如 N3")
     args = ap.parse_args()
 
+    if _env.load(["SSP_DEFAULT_PASSWORD"]):
+        print("\n[test-cases] 缺少平台账号口令配置，已中止（见上方 [config] 提示）。")
+        return 1
+
     print("=" * 74)
     print(" I-09 测试用例（反例 / 边界）—— PRD §9 验收标准 + §10 边界与异常")
     print("=" * 74)
@@ -1247,7 +1258,7 @@ def main():
 
     clear_discovery_config()          # 收尾：移除测绘配置覆写，恢复默认（min_obs=3 等）
     try:                              # 收尾：确保默认分支登记齐全且启用（N10 会临时摘除 hq）
-        _adm = portal_login("admin", "REDACTED-SSP-PWD")
+        _adm = portal_login("admin")
         if _adm:
             restore_branches(_adm)
     except Exception:

@@ -5,7 +5,9 @@
 | 脚本 | 用途 | 常用命令 |
 |---|---|---|
 | **初始化 / 库** | | |
-| `init-db.py` | 建业务库表 + 种子账号（SQLite/PG） | `make init` |
+| `gen-env.sh` | 生成 `deploy/.env`（随机口令、0600、**不入库**；已存在则不动） | `make env`（`make init`/`make up` 自动调用） |
+| `_env.py` | 宿主脚本统一加载 `deploy/.env`（`import _env`；仓库内不保存任何口令） | 被 init-db / test-cases / acceptance-demo / discovery-run 引用 |
+| `init-db.py` | 建业务库表 + 种子账号（SQLite/PG；口令取自 `deploy/.env`） | `make init` |
 | `init-alias.sh` | 下发 `ssp-ecs` 别名 | `make templates` |
 | **索引模板** | | |
 | `apply-ecs-template.sh` | 下发 ECS 索引模板 | `make templates` |
@@ -35,6 +37,7 @@
 | **校验 / 验收** | | |
 | `acceptance-demo.py` | I-08 端到端正例（A1~A8） | `make verify` |
 | `test-cases.py` | I-09 反例/边界（N1~N4）+ I-12 资产测绘（A9~A11 / N5~N7）+ I-13 多分支汇聚（A13~A15 / N10~N11）+ **I-14 流式关联与外部源（A16~A18 / N12~N13）** + 正例回归 | `make verify` |
+| `lint.py` | 零副作用语法检查（不写 `__pycache__`） | `make lint` |
 | **其他** | | |
 | `run-correlator.sh` | 本地直接跑关联引擎（开发用） | — |
 | `search.sh` | 命令行检索 OpenSearch | — |

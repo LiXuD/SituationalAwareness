@@ -11,7 +11,7 @@ discovery-run.py —— 触发一次资产测绘（I-12），纯标准库，经�
     python3 scripts/discovery-run.py                      # 触发一次（默认窗口）
     python3 scripts/discovery-run.py --window 10080       # 指定回溯窗口（分钟）
     python3 scripts/discovery-run.py --stats              # 只看候选统计
-    python3 scripts/discovery-run.py --user admin --pass 'REDACTED-SSP-PWD'
+    python3 scripts/discovery-run.py --user admin         # 口令自动取 deploy/.env
 """
 import argparse
 import json
@@ -21,6 +21,9 @@ import sys
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _env  # noqa: E402   （加载 deploy/.env；仓库内不保存口令）
 
 PORTAL = os.environ.get("PORTAL_URL", "http://localhost:8093").rstrip("/")
 _CTX = ssl.create_default_context()
@@ -54,8 +57,15 @@ def main():
     ap.add_argument("--window", type=int, default=None, help="回溯窗口（分钟）")
     ap.add_argument("--stats", action="store_true", help="只查看候选统计")
     ap.add_argument("--user", default=os.environ.get("SSP_USER", "admin"))
-    ap.add_argument("--pass", dest="pwd", default=os.environ.get("SSP_PASS", "REDACTED-SSP-PWD"))
+    ap.add_argument("--pass", dest="pwd", default=None,
+                    help="口令（默认取 deploy/.env：SSP_<账号>_PASSWORD / SSP_DEFAULT_PASSWORD）")
     args = ap.parse_args()
+    if not args.pwd:
+        args.pwd = _env.account_password(args.user)
+        if not args.pwd:
+            _env.load(["SSP_DEFAULT_PASSWORD"])
+            print("[discovery] 未取得口令，已中止。")
+            return 1
 
     jar = CookieJar()
     op = _opener(jar)

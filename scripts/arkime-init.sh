@@ -33,9 +33,17 @@ docker run --rm --network "$NET" \
 # --createOnly 保证可重跑：用户已存在则跳过。
 # 注意：addUser.js 创建用户后不会自行退出（node 事件循环保持），故用 detached 容器启动，
 # 轮询 arkime_users_v30 计数确认创建成功后，再强制删除该容器（docker run 才会返回）。
+# 口令来自 deploy/.env（**仓库内不保存任何可用口令**）；缺失时中止并给出指引
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT/deploy/.env" ]; then set -a; . "$ROOT/deploy/.env"; set +a; fi
 ADMIN_USER="${ARKIME_ADMIN_USER:-admin}"
 ADMIN_NAME="${ARKIME_ADMIN_NAME:-Admin}"
-ADMIN_PASS="${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}"
+ADMIN_PASS="${ARKIME_ADMIN_PASSWORD:-}"
+if [ -z "$ADMIN_PASS" ]; then
+  echo "[init] 未配置 ARKIME_ADMIN_PASSWORD —— 请先 'make init'（自动生成 deploy/.env）" >&2
+  echo "       或 'cp deploy/.env.example deploy/.env' 后填写 ARKIME_ADMIN_PASSWORD" >&2
+  exit 1
+fi
 echo "[init] create admin user '$ADMIN_USER' (idempotent via --createOnly)"
 CID="arkime-adduser-$$"
 docker rm -f "$CID" >/dev/null 2>&1 || true

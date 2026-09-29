@@ -33,6 +33,9 @@ import sys
 import time
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _env  # noqa: E402   （加载 deploy/.env；仓库内不保存口令）
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OS = os.environ.get("OS_URL", "http://localhost:9200")
 CORR = os.environ.get("CORR_URL", "http://localhost:8091")
@@ -88,8 +91,12 @@ def es_doc(index, _id):
     return d.get("_source", {}) if isinstance(d, dict) and d.get("found") else {}
 
 
-def portal_login(username="admin", password="REDACTED-SSP-PWD"):
-    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。"""
+def portal_login(username="admin", password=None):
+    """登录平台业务后端，返回会话 Cookie 值（失败返回 None）。
+
+    口令来自 `deploy/.env`（`SSP_<账号>_PASSWORD` 优先，回退 `SSP_DEFAULT_PASSWORD`）。
+    """
+    password = password or _env.account_password(username)
     jar = CookieJar()
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPCookieProcessor(jar),
@@ -254,7 +261,7 @@ def step_a5_sla():
 
 def step_a6_draft_no_autosubmit():
     print("\n▶ A6 草稿生成·不自动提交（I-05）", flush=True)
-    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    tok = portal_login("ops")
     if not tok:
         return rec("A6", "草稿生成·不自动提交", False, "登录失败")
     hdrs = soar_headers(tok)
@@ -273,7 +280,7 @@ def step_a6_draft_no_autosubmit():
 
 def step_a7_approve_block():
     print("\n▶ A7 人工审批→落黑→回写（I-05）", flush=True)
-    tok = portal_login("ops", "REDACTED-SSP-PWD")
+    tok = portal_login("ops")
     if not tok:
         return rec("A7", "人工审批落黑", False, "登录失败")
     hdrs = soar_headers(tok)
@@ -325,7 +332,7 @@ def step_a7_approve_block():
 def step_a8_dashboard():
     print("\n▶ A8 大屏四视图（I-07）", flush=True)
     alerts = es_count("ssp-alerts")
-    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    tok = portal_login("admin")
     assets, risk_avg = asset_stats(tok)
     geo = es_search("ssp-alerts", {"size": 0, "aggs": {"g": {"filter": {"exists": {"field": "related.geo_points.geo.location"}}}}})
     geo_n = geo.get("aggregations", {}).get("g", {}).get("doc_count", 0)
@@ -345,6 +352,10 @@ def main():
     ap.add_argument("--reset", action="store_true", help="仅复位后退出")
     ap.add_argument("--skip-misp", action="store_true", help="跳过 A4 MISP 降级步骤")
     args = ap.parse_args()
+
+    if _env.load(["SSP_DEFAULT_PASSWORD"]):
+        print("\n[acceptance-demo] 缺少平台账号口令配置，已中止（见上方 [config] 提示）。")
+        return 1
 
     print("=" * 74)
     print(" I-08 POC 端到端验收 Demo（探针告警 → 情报匹配 → 审批拉黑 → 大屏可见）")

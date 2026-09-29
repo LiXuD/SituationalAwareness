@@ -11,7 +11,7 @@ PY := python3
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init up down ps logs templates demo verify health clean \
+.PHONY: help init env up down ps logs templates demo verify health clean \
         pg-up pg-init pg-portal pg-stop lint discover discovery-status \
         branch-demo branch-status branch-down branch-up \
         stream-status stream-demo external-up external-down external-demo external-reset
@@ -21,11 +21,16 @@ help: ## 显示所有可用命令
 	  awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 # ----------------------------- 业务库 ----------------------------- #
-init: ## 初始化业务库（建表 + 种子账号，SQLite）
+env: ## 生成本地运行时配置 deploy/.env（随机口令，不入库；已存在则不动）
+	@bash scripts/gen-env.sh
+
+init: ## 初始化业务库（首次自动生成 deploy/.env + 建表 + 种子账号，SQLite）
+	@bash scripts/gen-env.sh
 	$(PY) scripts/init-db.py
 
 # ----------------------------- 服务编排 ----------------------------- #
-up: ## 启动全部服务
+up: ## 启动全部服务（缺 deploy/.env 时自动生成）
+	@bash scripts/gen-env.sh
 	$(COMPOSE) up -d
 
 down: ## 停止全部服务（保留数据卷）
@@ -100,8 +105,11 @@ external-reset: ## 清理外部源演示数据（删除 ssp-firewall-* / ssp-waf
 pg-up: ## 启动 PostgreSQL 容器
 	$(COMPOSE) --profile postgres up -d postgres
 
-pg-init: ## 建表 + 种子到 PostgreSQL
-	PLATFORM_DB='postgresql://ssp:REDACTED-PG-PWD@localhost:5433/ssp' $(PY) scripts/init-db.py
+pg-init: ## 建表 + 种子到 PostgreSQL（DSN 由 deploy/.env 拼装）
+	@set -a; if [ -f deploy/.env ]; then . ./deploy/.env; fi; set +a; \
+	  : "$${POSTGRES_PASSWORD:?未设置 POSTGRES_PASSWORD —— 请先 make init 生成 deploy/.env}"; \
+	  PLATFORM_DB="postgresql://$${POSTGRES_USER:-ssp}:$${POSTGRES_PASSWORD}@localhost:$${POSTGRES_PORT:-5433}/$${POSTGRES_DB:-ssp}" \
+	  $(PY) scripts/init-db.py
 
 pg-portal: ## 把 portal 切到 PostgreSQL
 	$(COMPOSE_PG) up -d --force-recreate portal

@@ -45,7 +45,7 @@
 ## 快速开始
 
 ```bash
-make init          # 初始化业务库（建表 + 种子账号 + 登记默认分支 hq/sh-01/bj-01，密码 REDACTED-SSP-PWD）
+make init          # 初始化业务库（首次自动生成 deploy/.env 随机口令 + 建表 + 种子账号 + 登记默认分支 hq/sh-01/bj-01）
 make up            # 起全部服务（docker compose，含 Kafka 汇聚层与分支边缘代理）
 make templates     # 下发 ECS/告警索引模板
 make demo          # 回放演示数据（总部 + 分支，探针 → 事件）
@@ -72,7 +72,7 @@ make external-demo             # 投递防火墙 syslog / WAF CEF / JSON 样例�
 make external-reset            # 清理外部源演示数据
 ```
 
-访问 <http://localhost:8088>，用 `admin / REDACTED-SSP-PWD` 登录。
+访问 <http://localhost:8088>，用 `admin` 登录（口令见 `deploy/.env` 的 `SSP_ADMIN_PASSWORD`，首次由 `make init` 随机生成）。
 
 启用 PostgreSQL（可选，业务量大时）：
 ```bash
@@ -80,6 +80,32 @@ make pg-up         # 起 PG
 make pg-init       # 建表 + 种子到 PG
 make pg-portal     # 把 portal 切到 PG
 ```
+
+---
+
+## 凭据与本地配置（`deploy/.env`）
+
+**仓库内不保存任何可用口令**。运行时配置统一走 `deploy/.env`（`.gitignore` 已忽略，
+模板见 `deploy/.env.example`）：
+
+| 变量 | 用途 |
+|---|---|
+| `SSP_DEFAULT_PASSWORD` | 平台账号（admin/ops/analyst/asset）初始口令（`scripts/init-db.py` 种子） |
+| `SSP_<账号>_PASSWORD` | 可选：为单个账号指定不同口令（优先于默认口令） |
+| `ARKIME_ADMIN_USER` / `ARKIME_ADMIN_PASSWORD` | Arkime Viewer + portal 的 BFF 代理鉴权 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | PostgreSQL 可选后端 |
+
+```bash
+make env            # 生成 deploy/.env（随机口令，0600，不入库）；已存在则不动
+make init           # 首次会自动调用上一步，再建表 + 种子账号
+cp deploy/.env.example deploy/.env   # 也可以手工方式，自行填写
+```
+
+- **compose 与宿主脚本读同一份文件**：compose 自动读取 `deploy/.env` 做 `${VAR}` 插值；
+  宿主脚本由 `scripts/_env.py` 加载（`import _env`）。已存在的环境变量优先级更高。
+- **缺失即报错**：未配置口令时 compose 会直接报错、`scripts/init-db.py` 会中止，
+  不会退化成"某个弱默认口令"。
+- 生产部署请用强口令并轮换；如需与现有身份系统对接，改 portal 的登录实现即可。
 
 ---
 

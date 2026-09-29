@@ -165,7 +165,10 @@ make branch-down B=sh-01      # 模拟某分支断链
 make pg-up / pg-init / pg-portal / pg-stop   # PostgreSQL 后端切换
 ```
 
-**默认账号**：`admin` / `ops` / `analyst` / `asset`（资产管理员），初始口令 `REDACTED-SSP-PWD`（**生产须轮换**）
+**默认账号**：`admin` / `ops` / `analyst` / `asset`（资产管理员）。
+初始口令**不在仓库里**：本地值由 `make init` 首次运行时随机生成并写入 `deploy/.env`
+（`.gitignore` 已忽略；模板见 `deploy/.env.example`），变量名 `SSP_<账号>_PASSWORD` / `SSP_DEFAULT_PASSWORD`。
+**生产必须轮换**（改用 `deploy/.env` 中的强口令，或接企业统一认证）。
 
 ---
 

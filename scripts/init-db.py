@@ -11,7 +11,8 @@ init-db.py —— 初始化平台业务数据库（建表 + 种子账号）。
 行为：
     1) 执行 services/portal/db.py 的 SCHEMA_SQL 建表（幂等）。
     2) 若 users 表为空：优先迁入 services/portal/users.json 的账号；
-       否则写入 4 个默认账号（密码 REDACTED-SSP-PWD，PBKDF2-HMAC-SHA256）。
+       否则写入 4 个默认账号（**初始口令取自 deploy/.env**：`SSP_<账号>_PASSWORD` 优先、
+       回退 `SSP_DEFAULT_PASSWORD`；仓库内不保存任何可用口令，缺失即中止）。
 """
 import hashlib
 import json
@@ -28,6 +29,7 @@ _DEFAULT_DB = "sqlite:///" + os.path.join(ROOT, "data", "ssp.db")
 os.environ.setdefault("PLATFORM_DB", _DEFAULT_DB)
 
 import db  # noqa: E402
+import _env  # noqa: E402
 
 ITER = 200_000
 DEFAULT_USERS = [
@@ -36,7 +38,22 @@ DEFAULT_USERS = [
     ("asset", "资产管理员", "asset_admin"),
     ("ops", "运维值班", "ops"),
 ]
-DEFAULT_PASSWORD = "REDACTED-SSP-PWD"
+
+
+def _require_default_password():
+    """初始口令来自环境（`SSP_DEFAULT_PASSWORD`，可被 `SSP_<ROLE>_PASSWORD` 覆盖）。
+
+    **仓库里不保存任何可用口令**：本机值在 `deploy/.env`（已 gitignore），
+    全新环境由 `make init` 自动生成随机口令（`scripts/gen-env.sh`）。
+    """
+    missing = _env.load(["SSP_DEFAULT_PASSWORD"])
+    if missing:
+        print("[init-db] 未配置初始口令，已中止（避免出现'默认口令即全部口令'）。")
+        return None
+    return os.environ["SSP_DEFAULT_PASSWORD"]
+
+
+DEFAULT_PASSWORD = _require_default_password()
 
 # I-13 多分支汇聚：默认分支登记（与 logs/branch-*、总部链路一致）
 DEFAULT_BRANCHES = [
@@ -104,9 +121,11 @@ def main():
                          u.get("role", "analyst"), u.get("salt", ""), u.get("hash", ""),
                          int(u.get("iterations", ITER)), "active", now, now))
     else:
-        print(f"[init-db] 写入默认 {len(DEFAULT_USERS)} 个账号（密码 {DEFAULT_PASSWORD}）")
+        print(f"[init-db] 写入默认 {len(DEFAULT_USERS)} 个账号"
+              f"（口令取自 deploy/.env：SSP_<账号>_PASSWORD 优先，回退 SSP_DEFAULT_PASSWORD；"
+              f"不回显口令值）")
         for username, display, role in DEFAULT_USERS:
-            salt, h, it = hash_password(DEFAULT_PASSWORD)
+            salt, h, it = hash_password(_env.account_password(username))
             rows.append((username, display, role, salt, h, it, "active", now, now))
 
     q = db.qmark()

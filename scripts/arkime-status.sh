@@ -4,10 +4,15 @@ set -euo pipefail
 export PATH=/usr/local/bin:$PATH
 cd "$(dirname "$0")/.."
 
-# Viewer 使用 digest 鉴权（config.ini 未设 authMode，Arkime 默认 digest）。
-# 账号由 scripts/arkime-init.sh 创建，可用环境变量覆盖。
+#  Viewer 使用 digest 鉴权（config.ini 未设 authMode，Arkime 默认 digest）。
+#  账号由 scripts/arkime-init.sh 创建；口令来自 deploy/.env（仓库内不保存）。
+if [ -f deploy/.env ]; then set -a; . deploy/.env; set +a; fi
 ADMIN_USER="${ARKIME_ADMIN_USER:-admin}"
-ADMIN_PASS="${ARKIME_PASSWORD:-REDACTED-ARKIME-PWD}"
+ADMIN_PASS="${ARKIME_ADMIN_PASSWORD:-}"
+if [ -z "$ADMIN_PASS" ]; then
+  echo "[arkime] 未配置 ARKIME_ADMIN_PASSWORD —— 请先 'make init' 生成 deploy/.env" >&2
+  exit 1
+fi
 
 # 本机访问一律绕过代理：否则 curl 会发出「绝对 URI 请求行」，
 # Express 会直接判为 400 Bad Request（症状是鉴权已通过但接口返回 400）。
