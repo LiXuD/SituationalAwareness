@@ -1,0 +1,46 @@
+# I-14 外部日志源适配器（syslog / CEF / JSON 三入口）
+#
+# **默认不启动**：本服务位于 compose profile `external`，`make up` 不会拉起它；
+# 需显式 `make external-up`（等价 `docker compose --profile external up -d ingest-adapter`）。
+# 且进程内还有 `ADAPTER_ENABLED` 双保险 —— 关闭时**不监听端口、不产生任何副作用**
+# （计划 §七 EARS State-driven、用例 N13）。
+#
+# 数据流：第三方设备 → 本适配器（解析 + 打标）→ Kafka ssp-raw（中心汇聚层）
+#         → Logstash（ECS 归一，40-external.conf）→ OpenSearch ssp-firewall-*
+#         → 统一检索 / 流式关联（services/stream）。
+# 新增一类外部源**不改中心端口与汇聚层**，只需加一个适配器实例与（必要时）一条 Logstash filter。
+#
+# 相对路径以本文件所在目录为基准：deploy/ingest-adapter
+services:
+  ingest-adapter:
+    image: python:3.12-slim
+    container_name: ssp-ingest-adapter
+    profiles: ["external"]
+    command: python3 /srv/adapter.py
+    environment:
+      - ADAPTER_ENABLED=${ADAPTER_ENABLED:-true}
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - ADAPTER_TOPIC=ssp-raw                 # 中心汇聚层主题（与 Filebeat 同一入口）
+      - COMMON_DIR=/srv-common
+      - PYTHONPATH=/srv-common
+      # --- 三个入口端口 ---
+      - ADAPTER_SYSLOG_UDP_PORT=5514
+      - ADAPTER_CEF_TCP_PORT=5515
+      - ADAPTER_JSON_HTTP_PORT=5516
+      # --- 打标默认值 ---
+      - ADAPTER_DEFAULT_SOURCE=firewall        # → fields.log_source → 索引 ssp-firewall-YYYY.MM.dd
+      - ADAPTER_DEFAULT_BRANCH=hq
+      - ADAPTER_DEFAULT_SITE=总部
+      # 按来源 IP 前缀判分支（可空）：'10.9.=sh-01,10.7.=bj-01'
+      - ADAPTER_BRANCH_MAP=${ADAPTER_BRANCH_MAP:-}
+    volumes:
+      - ../../services/ingest-adapter:/srv:ro
+      - ../../services/common:/srv-common:ro
+    ports:
+      - "5514:5514/udp"
+      - "5515:5515"
+      - "5516:5516"
+    depends_on:
+      - kafka
+    networks: [ssp]
+    restart: unless-stopped

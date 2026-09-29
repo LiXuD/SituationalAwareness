@@ -69,7 +69,7 @@ case "$MODE" in
     [ -n "$BRANCH" ] || { echo "--down 需指定分支，如 --down sh-01" >&2; exit 2; }
     SVC="$(svc_of "$BRANCH")"
     [ -n "$SVC" ] || { echo "未知分支：$BRANCH（可用 hq / sh-01 / bj-01）" >&2; exit 2; }
-    say "模拟分支断链：停用 $BRANCH（服务 $SVC）…"
+    say "模拟分支断链：停用 ${BRANCH}（服务 ${SVC}）…"
     docker compose -f "$COMPOSE" stop "$SVC" >/dev/null 2>&1 || true
     say "删除该分支已入湖事件（使健康判定立刻转 no_data）…"
     "${CURL[@]}" -X POST "$OS/ssp-events/_delete_by_query?refresh=true" \
@@ -83,7 +83,7 @@ case "$MODE" in
     [ -n "$BRANCH" ] || { echo "--up 需指定分支，如 --up sh-01" >&2; exit 2; }
     SVC="$(svc_of "$BRANCH")"
     [ -n "$SVC" ] || { echo "未知分支：$BRANCH" >&2; exit 2; }
-    say "恢复分支 $BRANCH（重建 $SVC，重新采集分支数据）…"
+    say "恢复分支 ${BRANCH}（重建 ${SVC}，重新采集分支数据）…"
     docker compose -f "$COMPOSE" up -d --force-recreate "$SVC" >/dev/null
     sleep 6
     status

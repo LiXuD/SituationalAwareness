@@ -13,7 +13,8 @@ PY := python3
 
 .PHONY: help init up down ps logs templates demo verify health clean \
         pg-up pg-init pg-portal pg-stop lint discover discovery-status \
-        branch-demo branch-status branch-down branch-up
+        branch-demo branch-status branch-down branch-up \
+        stream-status stream-demo external-up external-down external-demo external-reset
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) | \
@@ -75,6 +76,26 @@ branch-down: ## 模拟某分支断链，如 make branch-down B=sh-01
 branch-up: ## 恢复某分支，如 make branch-up B=sh-01
 	bash scripts/replay-branch.sh --up $(B)
 
+# ----------------------------- 流式关联（I-14 L1） ----------------------------- #
+stream-status: ## 查看流式关联引擎状态（消费速率 / 位点滞后 / 实测时延）
+	@bash scripts/stream-demo.sh --status
+
+stream-demo: ## 回放演示数据并观察「秒级」流式告警（含时延实测）
+	@bash scripts/stream-demo.sh
+
+# ----------------------------- 外部日志源适配（I-14 L2，默认关闭） ----------------------------- #
+external-up: ## 启用外部日志源适配器（syslog:5514/udp、CEF:5515/tcp、JSON:5516）
+	$(COMPOSE) --profile external up -d ingest-adapter
+
+external-down: ## 关闭并移除外部日志源适配器（回到"无副作用"的默认态）
+	$(COMPOSE) --profile external rm -sf ingest-adapter
+
+external-demo: ## 投递外部源样例日志（防火墙 syslog / CEF / JSON）并观察入库与关联
+	@bash scripts/external-demo.sh
+
+external-reset: ## 清理外部源演示数据（删除 ssp-firewall-* / ssp-waf-* 索引）
+	@bash scripts/external-demo.sh --reset
+
 # ----------------------------- PostgreSQL（可选） ----------------------------- #
 pg-up: ## 启动 PostgreSQL 容器
 	$(COMPOSE) --profile postgres up -d postgres
@@ -89,6 +110,5 @@ pg-stop: ## 停止 PostgreSQL 容器
 	$(COMPOSE) --profile postgres stop postgres
 
 # ----------------------------- 校验 ----------------------------- #
-lint: ## Python 语法检查
-	$(PY) -m py_compile services/portal/*.py services/correlator/*.py services/soar/*.py scripts/*.py
-	@echo "Python 语法 OK"
+lint: ## Python 语法检查（不写字节码缓存，受限环境也可用）
+	$(PY) scripts/lint.py

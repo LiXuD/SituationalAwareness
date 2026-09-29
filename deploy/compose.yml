@@ -20,6 +20,8 @@ include:
   - ui/compose.yml
   - arkime/compose.yml
   - correlator/compose.yml
+  - stream/compose.yml
+  - ingest-adapter/compose.yml
   - soar/compose.yml
   - portal/compose.yml
   - postgres/compose.yml

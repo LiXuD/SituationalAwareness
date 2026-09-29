@@ -157,6 +157,35 @@ Arkime 的**节点名＝容器 hostname**，写进会话/文件 `node` 字段；
 OSS Logstash 无 GeoLite2，统一用 **DB-IP Lite City**（免费无需账号）。经本机代理从 jsDelivr 镜像拉取：
 `https://cdn.jsdelivr.net/npm/dbip-city-lite/dbip-city-lite.mmdb.gz`（实测 ~15MB/s）。下载后务必跑 `scripts/patch-mmdb-type.py` 把 `database_type` 改写为 `GeoLite2-City`，否则 Logstash pipeline 会被停。
 
+**Q33. 流式关联是怎么做到"秒级"的？（I-14）**
+新增 `stream` 服务（`services/stream`，:8094）消费 Kafka 归一事件流，在**内存滑动窗口**内执行与批式
+**同一份**规则实现（`services/common/ssp_kernel.py`），命中即写 `ssp-alerts`。
+窗口**锚定事件时间**（不锚墙钟），评估节流 1s；位点落盘可续读。
+实测：事件入 Kafka → 告警落库 **1.05~1.19s**，流式段（`ssp.alert.stream_latency_ms`）**9~17ms**；
+批式仍是 30min 窗口 + 周期扫描，负责跨源深度关联，两者**并存不替代**。
+
+**Q34. 为什么流式引擎消费 `ssp-ecs` 而不是 `ssp-raw`？（I-14）**
+`ssp-raw` 是**归一前**的原始日志（探针私有字段），若流式引擎自行解析，等于把 I-01 的 ECS 归一
+逻辑再实现一遍 → "流式与批式规则实现分叉"。所以让 Logstash **双写**（OpenSearch + Kafka `ssp-ecs`），
+两侧拿到**同一份 ECS 文档**，口径天然一致，且流式不必等 OpenSearch refresh。
+
+**Q35. 防火墙/WAF 等外部日志怎么接入？（I-14）**
+`make external-up` 启用适配器（默认关闭，profile `external`）：syslog `5514/udp`、CEF `5515/tcp`、
+JSON `POST :5516/ingest/json?source=&branch=`。适配器**只做协议解析 + 打标**
+（`fields.log_source` / `fields.branch`），投递中心汇聚层 `ssp-raw`，ECS 归一仍在 Logstash
+（`40-external.conf`，含 Cisco ASA 方言 grok），落到 `ssp-firewall-*` 并挂 `ssp-events` 别名 →
+可检索、可被流式关联消费。新增一类源**不改中心端口与汇聚层**。
+
+**Q36. 批式和流式会不会把同一条告警算两遍？（I-14）**
+不会。两引擎写同一 `ssp-alerts`，`_id = sha1(rule_id|entity_key)` 完全相同 → 幂等 upsert
+（保留人工处理状态、生成/截止时刻被钉住），`ssp.alert.engines` 记录来源（`batch`/`stream`）——
+`make verify` 的 A17 实测：批式两次命中 `total 26→26`，流式再命中同一 `_id` 后 `total` 仍为 26。
+
+**Q37. 端到端验收现在覆盖哪些？（I-14 后）**
+`make verify` = **21/21**：P0 正例回归（A1~A8）+ A9~A11（资产测绘）+ A13~A18（多分支汇聚、
+**流式关联 A16 / 幂等共存 A17 / 外部源适配 A18**）+ 反例 N1~N7、N10~N13
+（含 **N12 消费者中断不丢事件 / N13 外部源关闭无副作用**）。
+
 ---
 
 ## 九、本机环境速查（开发/排障）

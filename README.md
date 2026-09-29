@@ -22,10 +22,12 @@
                     └── 检索与时序层（保留）
                           ├── OpenSearch (:9200)   事件 / 告警
                           └── Arkime (:8005)       流量 / PCAP
-                多分支汇聚层  Kafka (:9092, ssp-raw)  ← 各分支边缘代理汇聚（I-13）
-                采集端  Filebeat(总部 hq) + Filebeat(分支 sh-01 / bj-01) → Kafka → Logstash(ECS 归一)
+                多分支汇聚层  Kafka (:9092, ssp-raw)  ← 各分支边缘代理 + 外部源适配器汇聚
+                采集端  Filebeat(总部 hq) + Filebeat(分支 sh-01/bj-01) → Kafka → Logstash(ECS 归一)
+                        Logstash 归一后**双写**：OpenSearch ＋ Kafka ssp-ecs（流式输入，I-14）
+                关联分析  批式 correlator (:8091)  ＋  流式 stream (:8094)   ← 共用同一份规则内核
+                外部日志源 ingest-adapter (:5514/udp、:5515、:5516)  ← 默认关闭（profile external，I-14）
                 落黑执行器 soar (:8092, privileged) iptables
-                关联引擎 correlator (:8091)
 ```
 
 **数据分层原则**：业务对象（用户/会话/资产/候选池/分支/审批/黑名单/配置/审计）入**平台自有业务库**；
@@ -33,6 +35,10 @@
 
 **多分支汇聚（I-13）**：分支身份 `fields.branch` → `ssp.branch`，经 **Kafka(`ssp-raw`)** 汇聚；
 单分支断链只影响该分支状态（`no_data`），其他分支与平台不受影响。
+
+**双引擎关联（I-14）**：批式（30min 窗口、周期扫描）与流式（30s 滑动窗口、事件驱动、秒级）
+**并存**，共用 `services/common/ssp_kernel.py` 的规则实现，写同一 `ssp-alerts`，
+靠 `_id = sha1(rule_id|entity_key)` 幂等去重（`ssp.alert.engines` 标记来源）。
 
 ---
 
@@ -45,7 +51,7 @@ make templates     # 下发 ECS/告警索引模板
 make demo          # 回放演示数据（总部 + 分支，探针 → 事件）
 make discover      # 触发一次资产测绘（Zeek 连接日志 → 候选池）
 make branch-status # 查看各分支事件量与最新上报时间
-make verify        # 端到端验收（A1~A15 正例 + N1~N11 反例）
+make verify        # 端到端验收（A1~A18 正例 + N1~N13 反例，当前 21/21）
 make health        # 查看各服务健康
 ```
 
@@ -54,6 +60,16 @@ make health        # 查看各服务健康
 make branch-demo          # 重建各分支边缘代理，重新采集分支数据
 make branch-down B=sh-01  # 模拟某分支断链（→ 该分支 no_data，其他分支不受影响）
 make branch-up   B=sh-01  # 恢复该分支
+```
+
+流式关联 / 外部日志源（I-14）：
+```bash
+make stream-status             # 流式引擎状态（消费量 / 位点滞后 / 实测时延）
+make stream-demo               # 回放演示数据并观察「秒级」流式告警（含时延实测）
+make stream-demo --probe       # 直接投递一条事件到 ssp-ecs，隔离采集抖动实测端到端时延
+make external-up / external-down   # 启用 / 关闭外部日志源适配器（默认关闭）
+make external-demo             # 投递防火墙 syslog / WAF CEF / JSON 样例并验证入库与关联
+make external-reset            # 清理外部源演示数据
 ```
 
 访问 <http://localhost:8088>，用 `admin / REDACTED-SSP-PWD` 登录。
@@ -72,11 +88,11 @@ make pg-portal     # 把 portal 切到 PG
 | 目录 | 说明 |
 |---|---|
 | `ui/` | 前端工程（无构建 SPA：`index.html` + `src/`）；`deploy/ui/` 为 nginx 入口 |
-| `services/` | 后端服务：`portal/`（统一业务后端：`portal_server.py` + `db.py` + `assets/soar/users/discovery/branches.py`）、`correlator/`、`soar/`（落黑执行器） |
-| `deploy/` | per-service compose（`deploy/compose.yml` 为唯一入口，`include` 聚合）；`kafka/` 汇聚层、`branch/` 分支边缘代理 |
-| `config/` | OpenSearch 索引模板、Logstash 管道、Arkime 配置 |
+| `services/` | 后端服务：`portal/`（统一业务后端：`portal_server.py` + `db.py` + `assets/soar/users/discovery/branches.py`）、`common/`（**共享关联内核** `ssp_kernel` + 纯标准库 Kafka 客户端 `kafka_lite` + `threat_intel`）、`correlator/`（批式关联执行壳）、`stream/`（**流式关联引擎**）、`ingest-adapter/`（**外部日志源适配器**）、`soar/`（落黑执行器） |
+| `deploy/` | per-service compose（`deploy/compose.yml` 为唯一入口，`include` 聚合）；`kafka/` 汇聚层、`branch/` 分支边缘代理、`stream/` 流式引擎、`ingest-adapter/` 外部源适配器（profile `external`） |
+| `config/` | OpenSearch 索引模板、Logstash 管道（含外部源归一的 `40-external.conf` 与归一事件流双写的 `99-outputs.conf`）、Arkime 配置 |
 | `scripts/` | 运维 / 生成 / 校验脚本（见 `scripts/README.md`，经 `make` 调用） |
-| `docs/` | PRD、各迭代（I-01~I-13）技术方案、FAQ、ECS 字段映射 |
+| `docs/` | PRD、各迭代（I-01~I-14）技术方案、FAQ、ECS 字段映射 |
 | `samples/` | 示例资产 xlsx、示例 pcap |
 | `logs/` | `demo/`（演示数据源）、`branch-sh/` `branch-bj/`（分支数据源）；`demo-stage/`、根目录为运行时暂存（gitignore） |
 | `data/` | 业务库 SQLite 文件（gitignore） |
@@ -96,4 +112,9 @@ make pg-portal     # 把 portal 切到 PG
   配置项（授权网段/阈值/窗口/自动采纳）走 `config` 表，经 `/api/discovery/config`（仅 admin 可改）。
 - **占位符**：业务 SQL 统一写 `?`，`db.adapt_sql()` 在 PG 后端自动转 `%s`（业务代码后端无关）。
 - **落黑**：草稿状态机在业务库，iptables 执行由特权容器 `soar` 承担。
+- **双引擎关联（I-14）**：流式（`services/stream`）消费 Logstash **双写**的 `ssp-ecs`（归一后事件流），
+  与批式共用 `services/common/ssp_kernel.py`；两引擎写同一 `ssp-alerts`，`_id = sha1(rule_id|entity_key)`
+  幂等去重；`ssp.alert.engines` 标记来源，`ssp.alert.stream_latency_ms` 记录实测时延。
+- **外部日志源（I-14）**：适配器**只解析 + 打标、不做归一**（归一同在 Logstash `40-external.conf`），
+  投递中心汇聚层 `ssp-raw`；**默认关闭**（compose profile `external`），关闭时不监听端口、零副作用。
 - 文档产出后先本地评审，再上传项目资料库。

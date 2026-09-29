@@ -137,13 +137,19 @@ def step_reset():
     for ip in ips:
         http("POST", f"{SOAR}/soar/block/remove", {"ip": ip})
     try:
-        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"))
+        c = sqlite3.connect(os.path.join(ROOT, "data", "ssp.db"), timeout=15)
+        # 连接级 MEMORY 回滚日志：避免 commit 阶段删除 ssp.db-journal 失败（受限环境禁止
+        # 文件删除时会报 disk I/O error，且本段历史上是静默 except → 复位看似成功实则没清）。
+        try:
+            c.execute("PRAGMA journal_mode=MEMORY")
+        except Exception:
+            pass
         c.execute("DELETE FROM soar_drafts")
         c.execute("UPDATE blacklist SET status='inactive'")
         c.commit()
         c.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [warn] 草稿/黑名单复位异常：{type(e).__name__}: {e}", flush=True)
     print(f"  已解除 {len(ips)} 条封禁；草稿已清理", flush=True)
 
 

@@ -1,15 +1,15 @@
 # 项目现状快照（PROJECT-STATE）
 
-> **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 13 份技术方案。
+> **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 14 份技术方案。
 > **维护**：每完成一个迭代即更新；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
-> **最后更新**：2026-09-29（提交 `3c12dcc`）
+> **最后更新**：2026-09-29（I-14 完成）
 
 ---
 
 ## 0. 一句话
 
-面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-13** 全部迭代并实测；
-当前待办是 **I-14 流式关联与外部日志源适配**、**I-15 项目上下文补齐**（两份计划待拍板）。
+面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-14** 全部迭代并实测；
+当前待办是 **I-15 项目上下文补齐**（计划待确认）。
 
 ---
 
@@ -37,11 +37,11 @@
 | I-10 | 统一平台整合（浏览器只连平台） | ✅ 完成 | 6 视图零错误 |
 | I-11 | 统一业务数据库与全量收口 | ✅ 完成 | 回归 5/5；PG 跑通 |
 | I-12 | 资产测绘自动化 | ✅ 完成 | 回归 11/11 |
-| I-13 | 多分支汇聚（Kafka） | ✅ 完成 | **回归 16/16** |
-| **I-14** | 流式关联与外部日志源适配 | 📋 **计划待拍板** | — |
+| I-13 | 多分支汇聚（Kafka） | ✅ 完成 | 回归 16/16 |
+| **I-14** | 流式关联与外部日志源适配 | ✅ **完成** | **回归 21/21**（A16 秒级 1.05~1.19s；A18 外部源可关联） |
 | **I-15** | 项目上下文补齐（9 份文档） | 📋 **计划待确认** | — |
 
-**当前基线**：`make verify` = **16/16 通过**（P0 正例 A1~A8 + A9~A11 + A13~A15 + 反例 N1~N7 + N10~N11）
+**当前基线**：`make verify` = **21/21 通过**（P0 正例 A1~A8 + A9~A11 + A13~A18 + 反例 N1~N7 + N10~N13）
 
 ---
 
@@ -54,15 +54,19 @@
                                                   ├─ 分支汇聚健康探测（进程内，I-13）
                                                   └─ BFF 透传：Arkime / OpenSearch / correlator / soar
 多分支汇聚层 Kafka :9092 (主题 ssp-raw)
-采集端  Filebeat(总部 hq) + Filebeat(分支 sh-01/bj-01) ──▶ Kafka ──▶ Logstash :5044(ECS 归一) ──▶ OpenSearch :9200
+采集端  Filebeat(总部 hq) + Filebeat(分支 sh-01/bj-01) + 外部源适配器(I-14) ──▶ Kafka ──▶ Logstash :5044(ECS 归一)
+        Logstash 归一后**双写**：OpenSearch :9200（检索/批式） + Kafka 主题 **ssp-ecs**（流式，I-14）
 存储检索  OpenSearch :9200（事件 ssp-<源>-日期 / 告警 ssp-alerts）· Arkime :8005（会话/PCAP，直连同一集群）
-关联分析  correlator :8091（纯标准库，R-001~R-007，分级 P0~P3）
+关联分析  批式 correlator :8091（30min 窗口，R-001~R-007） ＋ **流式 stream :8094**（30s 滑动窗口，秒级）
+          两者共用 services/common/ssp_kernel.py，写同一 ssp-alerts（_id 幂等去重，engines 标记来源）
+外部源     ingest-adapter :5514/udp(syslog) :5515(tcp/CEF) :5516(http/JSON) —— **默认关闭**（profile external）
 落黑执行  soar :8092（privileged，iptables 宿主链 SSP_BLACKLIST）
 ```
 
 **业务库 9 张表**：`users` `sessions` `assets` `asset_candidates` `branches` `soar_drafts` `blacklist` `config` `audit_log`
 
-**端口速查**：前端 8088 ｜ portal 8093 ｜ correlator 8091 ｜ soar 8092 ｜ OpenSearch 9200 ｜ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ PostgreSQL(宿主) 5433
+**端口速查**：前端 8088 ｜ portal 8093 ｜ correlator 8091 ｜ **stream 8094** ｜ soar 8092 ｜ OpenSearch 9200 ｜
+Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5515/tcp、5516/http** ｜ PostgreSQL(宿主) 5433
 
 ---
 
@@ -85,16 +89,33 @@
 11. **分支汇聚（I-13）**：分支身份靠 `fields.branch` → `ssp.branch`（**逻辑区分，非物理端口**），
     缺失默认 `hq`；新增分支只需加一个边缘代理，中心侧不改端口/管道。
 12. **资产测绘（I-12）**：自动发现**绝不覆盖人工字段**（名称/重要度/责任人/风险分）。
+13. **流式关联（I-14）**：流式引擎消费 **`ssp-ecs`**（Logstash 归一后**双写**的主题），
+    与批式共用 `services/common/ssp_kernel.py` 的同一份规则实现；窗口**锚定事件时间**；
+    位点落盘 `<OFFSET_DIR>/offsets-<GROUP>.json`（group 即命名空间，重放用独立 group）。
+    **批式与流式写同一 `ssp-alerts`，靠 `_id = sha1(rule_id|entity_key)` 幂等去重**，
+    `ssp.alert.engines` 记录来源（batch/stream），`stream_latency_ms` 记录实测时延。
+14. **外部源（I-14）**：适配器**只解析 + 打标，不做 ECS 归一**（归一同在 Logstash `40-external.conf`）；
+    默认关闭（compose profile `external` + `ADAPTER_ENABLED=false`），关闭时**不监听端口、零副作用**。
+    外部源索引沿用 `ssp-<log_source>-日期`（如 `ssp-firewall-*`），并已纳入 `ssp-events` 别名。
+15. **数据源健康基准只取探针源**（`source_health`）：外部源日志时间口径与探针数据不同
+    （外部是"当下"、探针常为历史回放），混入基准会把探针源误判为 `stale`。
+16. **Kafka 客户端（自研 `kafka_lite`）**：一个 TCP 连接**不可**多线程并发读写（响应流交叉 →
+    `Bad file descriptor`），已在 `KafkaClient._request` 内全局串行化；record batch v2 头为
+    **61 字节**（`baseSequence` 后还有 4 字节 `recordsCount`，官方文档表格未列出）。
+17. **Logstash 不热加载配置**：改 `config/logstash/conf.d/*.conf` 后必须重建 logstash 容器才生效。
 
 ---
 
 ## 5. 待办与阻塞项
 
-### I-14 流式关联与外部日志源适配（事项 `rVgO1S`）
-- **前置已满足**：I-13 Kafka 汇聚层在位 → 加消费者即可，**采集侧零改动**
-- **待拍板**：D1 实现形态（Flink / 轻量消费者 / 先轻量后重型）｜D2 首个外部源类型（防火墙 syslog / WAF / AD）｜
-  D3 优先级（流式关联 L1 vs 外部源适配 L2）｜D4 绝对排期
-- **拟新增验收**：A16 流式时延 ≤5s、A17 幂等与批式共存、N12 消费者中断不丢事件、N13 外部源关闭无副作用
+### I-14 流式关联与外部日志源适配（事项 `rVgO1S`）—— ✅ 已完成（2026-09-29）
+- 交付：流式关联引擎（`services/stream`，:8094）＋ 共享关联内核（`services/common`）＋ 外部源适配器
+  （`services/ingest-adapter`，syslog/CEF/JSON，默认关闭）；实测 `make verify` **21/21**，
+  端到端时延 **1.05~1.19s**，流式段 **11~17ms**。
+- 决策落定：D1 = C（轻量消费者，预留 Flink 替换点）｜D2 = 保留并存｜D3 = 防火墙 syslog(+WAF CEF+JSON)｜D4 = L1→L2 同期。
+- 技术方案：[`I-14-流式关联与外部日志源适配-技术方案.md`](I-14-流式关联与外部日志源适配-技术方案.md)
+- **未做（后续可选）**：Flink/exactly-once（D1 选项 A）、大屏"流式告警时延"指标、
+  批式引擎默认纳入外部源（只需设 `EXTERNAL_SOURCES=firewall,waf`）。
 
 ### I-15 项目上下文补齐（事项 `rUYkpk`）
 - 现状：`需求文档/` 仅 PRD、`系统文件/` 为空 → 拟交付 9 份（验收类 4 + 运维类 5）

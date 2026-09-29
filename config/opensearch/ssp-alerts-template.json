@@ -50,7 +50,11 @@
                 "ticket_id":        { "type": "keyword" },
                 "window_start":     { "type": "date" },
                 "window_end":       { "type": "date" },
-                "escalation_factors": { "type": "keyword" }
+                "escalation_factors": { "type": "keyword" },
+                "engines":          { "type": "keyword" },
+                "first_engine":     { "type": "keyword" },
+                "last_engine":      { "type": "keyword" },
+                "stream_latency_ms": { "type": "long" }
               }
             }
           }

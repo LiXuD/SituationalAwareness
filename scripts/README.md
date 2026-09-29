@@ -17,6 +17,9 @@
 | `discovery-run.py` | 触发一次资产被动测绘（经 portal API）；`--stats` 看候选统计 | `make discover` / `make discovery-status` |
 | **多分支汇聚（I-13）** | | |
 | `replay-branch.sh` | 重建分支边缘代理 / 模拟分支断链 / 查看各分支状态 | `make branch-demo` `make branch-down B=sh-01` `make branch-status` |
+| **流式关联 / 外部源（I-14）** | | |
+| `stream-demo.sh` | 流式引擎状态（`--status`）/ 回放并观测秒级告警 / `--probe` 隔离采集抖动实测时延 | `make stream-status` `make stream-demo` |
+| `external-demo.sh` | 投递外部源样例（syslog/CEF/JSON）并验证入库与关联；`--reset` 清理外部源数据 | `make external-demo` `make external-reset` |
 | **Arkime** | | |
 | `arkime-init.sh` | 初始化 Arkime（视图/用户） | — |
 | `arkime-import.sh` | 导入 PCAP | — |
@@ -31,7 +34,7 @@
 | `gen-sample-pcap.py` | 生成示例 PCAP | — |
 | **校验 / 验收** | | |
 | `acceptance-demo.py` | I-08 端到端正例（A1~A8） | `make verify` |
-| `test-cases.py` | I-09 反例/边界（N1~N4）+ I-12 资产测绘（A9~A11 / N5~N7）+ I-13 多分支汇聚（A13~A15 / N10~N11）+ 正例回归 | `make verify` |
+| `test-cases.py` | I-09 反例/边界（N1~N4）+ I-12 资产测绘（A9~A11 / N5~N7）+ I-13 多分支汇聚（A13~A15 / N10~N11）+ **I-14 流式关联与外部源（A16~A18 / N12~N13）** + 正例回归 | `make verify` |
 | **其他** | | |
 | `run-correlator.sh` | 本地直接跑关联引擎（开发用） | — |
 | `search.sh` | 命令行检索 OpenSearch | — |

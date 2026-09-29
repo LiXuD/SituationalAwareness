@@ -8,6 +8,11 @@
 把告警中的 IOC（源 IP / 域名 / 哈希）与威胁情报**实时比对**并标注命中，为分级（命中即置 P0）与 I-05 响应提供依据。
 
 - 双通道情报源：
+> **路径变更（I-14，2026-09-29）**：`threat_intel.py` 与 `threat_intel_seed.json` 已由
+> `services/correlator/` **移入 `services/common/`** —— 因为 I-14 起批式（correlator）与流式（stream）
+> 两个引擎共用同一份情报比对实现，共享内核统一放在 `services/common/`（`THREAT_MODULE_DIR=/srv-common`）。
+> 下文路径按当时状态记录，实现细节不变。
+
   1. **本地种子情报** `services/correlator/threat_intel_seed.json` —— POC 默认，无需部署 MySQL+Redis 重栈即可端到端实测；
   2. **真实 MISP REST**（`/attributes/restSearch`）—— 配 `MISP_URL` + `MISP_API_KEY` 即启用。
 - **生产切换**：只需填 `MISP_URL` / `MISP_API_KEY` 两项环境变量，代码零改动。

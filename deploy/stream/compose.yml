@@ -1,0 +1,56 @@
+# I-14 流式关联 —— 流式关联引擎（轻量消费者，纯标准库 Python，零第三方依赖）
+#
+# 输入：Kafka 主题 ssp-ecs（Logstash 归一后的 ECS 事件流，由 99-outputs.conf 双写）
+# 输出：ssp-alerts（与批式 correlator 共用幂等 _id，靠 engines 字段标记来源）
+# 相对路径以本文件所在目录为基准：deploy/stream
+services:
+  stream:
+    image: python:3.12-slim
+    container_name: ssp-stream
+    command: python3 /srv/stream_server.py
+    environment:
+      # --- 输入：消费归一后的 ECS 事件流 ---
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - STREAM_TOPIC=ssp-ecs
+      - STREAM_GROUP=ssp-stream                # group_id 同时是位点命名空间（重放用别的 group）
+      - STREAM_OFFSET_DIR=/var/lib/ssp-stream  # 位点落盘目录（命名卷持久化）
+      - STREAM_AUTO_OFFSET_RESET=latest        # 实时只吃新事件；重放用 earliest + 独立 group
+      - STREAM_WINDOW_SECONDS=30               # 滑动窗口跨度（以事件时间为锚）
+      - STREAM_EVAL_INTERVAL_MS=1000           # 评估节流（时延上界≈此值+入库耗时）
+      - STREAM_BUFFER_SIZE=20000               # 内存窗口上限（条）
+      - STREAM_COMMIT_INTERVAL_MS=2000         # 位点提交间隔
+      # --- 内核（与批式共用同一份规则/分级/写入实现）---
+      - OS_URL=http://opensearch:9200
+      - EVENTS_ALIAS=ssp-events
+      - ALERTS_INDEX=ssp-alerts
+      - ASSET_ALIAS=ssp-assets
+      - CORR_WINDOW_MINUTES=30
+      - CORR_EGRESS_THRESHOLD=3
+      # 事件来源：探针三类 + 外部源（I-14 L2 的 firewall/waf 经适配器→Logstash 归一后入库）
+      - ALLOWED_SOURCES=suricata,zeek,wazuh
+      - EXTERNAL_SOURCES=firewall,waf
+      - 'CORR_SLA_SECONDS={"P0":30,"P1":60,"P2":600,"P3":1800}'
+      - COMMON_DIR=/srv-common
+      - PYTHONPATH=/srv-common
+      - THREAT_MODULE_DIR=/srv-common
+      # --- 观测 ---
+      - LISTEN_HOST=0.0.0.0
+      - LISTEN_PORT=8094
+      - CORS_ALLOW_ORIGIN=*
+    volumes:
+      # 服务代码（只读）：services/stream -> /srv
+      - ../../services/stream:/srv:ro
+      # 共享内核（只读）：ssp_kernel（规则/分级/写入）+ kafka_lite（纯标准库 Kafka 客户端）
+      - ../../services/common:/srv-common:ro
+      # 消费位点（持久化）：容器重建/中断恢复后从位点续读，不丢事件
+      - stream-offsets:/var/lib/ssp-stream
+    ports:
+      - "8094:8094"
+    depends_on:
+      - kafka
+      - opensearch
+    networks: [ssp]
+    restart: unless-stopped
+
+volumes:
+  stream-offsets:

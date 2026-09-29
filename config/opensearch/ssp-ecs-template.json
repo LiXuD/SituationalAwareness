@@ -1,5 +1,5 @@
 {
-  "index_patterns": ["ssp-suricata-*", "ssp-zeek-*", "ssp-wazuh-*"],
+  "index_patterns": ["ssp-suricata-*", "ssp-zeek-*", "ssp-wazuh-*", "ssp-firewall-*", "ssp-waf-*", "ssp-ids-*", "ssp-proxy-*"],
   "priority": 100,
   "template": {
     "aliases": {
@@ -19,7 +19,10 @@
           "properties": {
             "log_source": { "type": "keyword" },
             "branch":      { "type": "keyword" },
-            "branch_site": { "type": "keyword" }
+            "branch_site": { "type": "keyword" },
+            "external":    { "type": "keyword" },
+            "adapter":     { "type": "keyword" },
+            "adapter_version": { "type": "keyword" }
           }
         },
         "event": {
@@ -29,6 +32,8 @@
             "type":     { "type": "keyword" },
             "module":   { "type": "keyword" },
             "dataset":  { "type": "keyword" },
+            "action":   { "type": "keyword" },
+            "outcome":  { "type": "keyword" },
             "severity": { "type": "keyword" }
           }
         },
@@ -127,13 +132,25 @@
         },
         "observer": {
           "properties": {
-            "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+            "name":    { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } },
+            "type":    { "type": "keyword" },
+            "vendor":  { "type": "keyword" },
+            "product": { "type": "keyword" },
+            "version": { "type": "keyword" }
           }
         },
         "ssp": {
           "properties": {
             "branch":      { "type": "keyword" },
-            "branch_site": { "type": "keyword" }
+            "branch_site": { "type": "keyword" },
+            "external": {
+              "properties": {
+                "entry":  { "type": "keyword" },
+                "peer":   { "type": "keyword" },
+                "parsed": { "type": "object", "enabled": false },
+                "json":   { "type": "object", "enabled": false }
+              }
+            }
           }
         },
         "log": {

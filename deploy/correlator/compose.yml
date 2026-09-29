@@ -25,10 +25,17 @@ services:
       - THREAT_SEED_FILE=${THREAT_SEED_FILE:-}
       - MISP_URL=${MISP_URL:-}
       - MISP_API_KEY=${MISP_API_KEY:-}
+      # I-14：共享关联内核（规则定义/执行/分级/告警组装/幂等写入/威胁情报）与
+      # 流式引擎（services/stream）**共用同一份**，避免规则实现分叉。
+      - PYTHONPATH=/srv-common
+      - COMMON_DIR=/srv-common
+      - THREAT_MODULE_DIR=/srv-common
       - CORS_ALLOW_ORIGIN=*
     volumes:
       # 服务代码（只读）：services/correlator -> /srv
       - ../../services/correlator:/srv:ro
+      # 共享内核（只读）：services/common -> /srv-common（ssp_kernel / kafka_lite / threat_intel）
+      - ../../services/common:/srv-common:ro
     ports:
       - "8091:8091"
     depends_on:
