@@ -1,15 +1,15 @@
 # 项目现状快照（PROJECT-STATE）
 
 > **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 14 份技术方案。
-> **维护**：每完成一个迭代即更新；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
-> **最后更新**：2026-09-29（I-15 完成）
+> **维护**：**每完成一项任务/迭代即更新本文件**（用户明确约定）；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
+> **最后更新**：2026-09-29（P0 工程化完成）
 
 ---
 
 ## 0. 一句话
 
-面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-15** 全部迭代并实测；
-阶段一全部事项已交付（无待办迭代）。
+面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-15** 全部迭代并实测
+（`make verify` 21/21）；**工程化改造 P0 已落地**（本地门禁 / 镜像钉版 / 单元测试 / 静默异常告警），P1/P2 待推进。
 
 ---
 
@@ -124,6 +124,15 @@ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5
 - 本地：`docs/需求文档/`、`docs/系统文件/`（提交 `504cab3`，已推送公开仓库）。
 - **未做（后续可选）**：转 Word/PPT 交付甲方（属另一份任务，需单独排期）。
 
+### 工程化改造（2026-09-29 新增工作流）—— P0 ✅ 完成 / P1~P2 待推进
+- **P0（正确性/可复现）已落地**：① 本地 pre-commit 门禁（`make gate`/`ci`/`hooks` + `scripts/pre-commit.sh` +
+  `scripts/check-secrets.py` 硬编码口令扫描）；② 自建镜像钉版（`ssp-*:${SSP_IMAGE_TAG:-2026.09}` + `make build`）；
+  ③ 单元测试 16 项（`tests/`，纯 stdlib unittest，覆盖 kafka_lite 编解码 + ssp_kernel 核心）；④ 3 处关键静默异常改为告警。
+  —— 全量 `make verify` **21/21** 通过，提交 `e04cd62`。
+- **P1（可维护性）待推进**：结构化日志（替换 print）、DB 迁移框架、配置 schema 校验、前端 lint。
+- **P2（观测/安全）待推进**：Kafka/OpenSearch 安全认证、统一 health/metrics、ruff + PR gate、镜像漏洞扫描。
+- **总原则**：保持「纯标准库 + 少量 dev 侧工具」定位，不引 k8s/Flink/重量观测栈；每项改动必须经 `make verify` 实测。
+
 ---
 
 ## 6. 文档与资产索引
@@ -135,7 +144,7 @@ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5
 | 计划 I-14 / I-15 | 资料库 `项目计划/`（2026-09-29 新建） | `JHjVMqqGwIvm` / `JrzgWlkultmg` |
 | ECS 字段映射 | 资料库 `技术方案/` | `JrndPbPfvoRs` |
 | 平台技术问答 FAQ | 资料库 `技术方案/` | `JqYKCypXGHdW` |
-| 资产库使用指南 | 资料库根 | `JcCytangqOwN`（建议移入 `系统文件/`） |
+| 资产库使用指南 | 资料库 `系统文件/` | `JcCytangqOwN`（已由根目录移入） |
 | 项目事项 | wb-issues | I-01~I-15（**全部 done**） |
 | 本机项目记忆 | `.workbuddy/memory/`（**不进 git**） | `MEMORY.md` + 每日日志 |
 
@@ -159,9 +168,14 @@ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5
 ```bash
 make init        # 建业务库表 + 种子账号 + 登记默认分支
 make up / down   # 起停全部服务（含 Kafka 汇聚层与分支代理）
+make build       # 构建自建镜像（portal/soar，钉版 tag）
 make templates   # 下发 ECS/告警索引模板
 make demo        # 回放演示数据（总部 + 分支）
-make verify      # 端到端验收（当前 16/16）
+make verify      # 端到端验收（当前 21/21）
+make gate        # 提交前快速门禁（语法 + 单元测试 + 口令扫描）
+make ci          # 全量门禁（gate + verify，合并/推送前）
+make test        # 单元测试（tests/，纯标准库 unittest）
+make hooks       # 安装 git pre-commit 钩子
 make health      # 各服务健康
 make branch-status            # 查看各分支上报状态
 make branch-down B=sh-01      # 模拟某分支断链
