@@ -12,7 +12,7 @@ PY := python3
 .DEFAULT_GOAL := help
 
 .PHONY: help init env up down ps logs templates demo verify health clean \
-        pg-up pg-init pg-portal pg-stop lint discover discovery-status \
+        pg-up pg-init pg-portal pg-stop lint gate ci hooks discover discovery-status \
         branch-demo branch-status branch-down branch-up \
         stream-status stream-demo external-up external-down external-demo external-reset
 
@@ -117,6 +117,20 @@ pg-portal: ## 把 portal 切到 PostgreSQL
 pg-stop: ## 停止 PostgreSQL 容器
 	$(COMPOSE) --profile postgres stop postgres
 
-# ----------------------------- 校验 ----------------------------- #
+# ----------------------------- 校验 / 本地门禁（无公网 CI） ----------------------------- #
 lint: ## Python 语法检查（不写字节码缓存，受限环境也可用）
 	$(PY) scripts/lint.py
+
+gate: ## 提交前快速门禁（秒级）：Python/shell 语法 + 硬编码口令扫描
+	@$(PY) scripts/lint.py
+	@for f in scripts/*.sh; do [ -e "$$f" ] || continue; bash -n "$$f" || { echo "  ✘ shell 语法错误：$$f"; exit 1; }; done
+	@$(PY) scripts/check-secrets.py
+	@echo "✓ gate 通过（Python 语法 + shell 语法 + 无硬编码口令）"
+
+ci: ## 本地全量门禁（合并/推送前手动跑）：gate + 端到端验收（约 2 分钟，会重置演示数据）
+	@$(MAKE) gate
+	@$(PY) scripts/test-cases.py
+
+hooks: ## 安装 git pre-commit 钩子（提交前自动跑 make gate）
+	@cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+	@echo "✓ 已安装 .git/hooks/pre-commit（提交前自动 make gate；全量请手动 make ci）"

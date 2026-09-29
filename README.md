@@ -55,6 +55,14 @@ make verify        # 端到端验收（A1~A18 正例 + N1~N13 反例，当前 21
 make health        # 查看各服务健康
 ```
 
+提交前验证（本地门禁，无需公网 CI）：
+```bash
+make hooks         # 一次性：安装 git pre-commit 钩子（提交前自动跑 make gate）
+make gate          # 快速门禁（秒级）：Python/shell 语法 + 硬编码口令扫描
+make ci            # 全量门禁（约 2 分钟，会重置演示数据）：gate + 端到端验收 —— 合并/推送前手动跑
+```
+`git commit --no-verify` 可临时跳过钩子（应尽量避免）。
+
 分支相关（I-13）：
 ```bash
 make branch-demo          # 重建各分支边缘代理，重新采集分支数据
