@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ssp-portal:latest
+    image: ssp-portal:${SSP_IMAGE_TAG:-2026.09}
     container_name: ssp-portal
     command: python3 /srv/portal_server.py
     environment:

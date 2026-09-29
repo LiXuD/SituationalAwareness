@@ -116,8 +116,9 @@ def get_config():
     try:
         for r in db.query("SELECT key, value FROM config WHERE key LIKE 'discovery.%'"):
             out[r["key"]] = r["value"]
-    except Exception:
-        pass
+    except Exception as e:
+        # 配置读取失败（通常 DB 异常）时不能静默——否则测绘会悄悄用默认配置跑
+        print(f"[discovery] 读取配置失败，回退默认: {type(e).__name__}: {e}", flush=True)
     return out
 
 

@@ -11,8 +11,8 @@ PY := python3
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init env up down ps logs templates demo verify health clean \
-        pg-up pg-init pg-portal pg-stop lint gate ci hooks discover discovery-status \
+.PHONY: help init env up down ps logs templates demo verify health clean build \
+        pg-up pg-init pg-portal pg-stop lint test gate ci hooks discover discovery-status \
         branch-demo branch-status branch-down branch-up \
         stream-status stream-demo external-up external-down external-demo external-reset
 
@@ -29,8 +29,15 @@ init: ## 初始化业务库（首次自动生成 deploy/.env + 建表 + 种子�
 	$(PY) scripts/init-db.py
 
 # ----------------------------- 服务编排 ----------------------------- #
-up: ## 启动全部服务（缺 deploy/.env 时自动生成）
+build: ## 构建自建镜像（portal / soar，tag 取自 deploy/.env 的 SSP_IMAGE_TAG）
+	$(COMPOSE) build portal soar
+
+up: ## 启动全部服务（缺 deploy/.env 自动生成；自建镜像缺失时自动构建）
 	@bash scripts/gen-env.sh
+	@set -a; if [ -f deploy/.env ]; then . ./deploy/.env; fi; set +a; \
+	  for img in "ssp-portal:$${SSP_IMAGE_TAG:-2026.09}" "ssp-soar:$${SSP_IMAGE_TAG:-2026.09}"; do \
+	    docker image inspect "$$img" >/dev/null 2>&1 || { echo "[up] 缺少镜像 $$img，构建中…"; $(COMPOSE) build portal soar; break; }; \
+	  done
 	$(COMPOSE) up -d
 
 down: ## 停止全部服务（保留数据卷）
@@ -121,11 +128,15 @@ pg-stop: ## 停止 PostgreSQL 容器
 lint: ## Python 语法检查（不写字节码缓存，受限环境也可用）
 	$(PY) scripts/lint.py
 
-gate: ## 提交前快速门禁（秒级）：Python/shell 语法 + 硬编码口令扫描
+test: ## 单元测试（纯标准库 unittest，秒级）
+	$(PY) -m unittest discover -s tests
+
+gate: ## 提交前快速门禁（秒级）：Python/shell 语法 + 单元测试 + 硬编码口令扫描
 	@$(PY) scripts/lint.py
 	@for f in scripts/*.sh; do [ -e "$$f" ] || continue; bash -n "$$f" || { echo "  ✘ shell 语法错误：$$f"; exit 1; }; done
+	@$(PY) -m unittest discover -s tests
 	@$(PY) scripts/check-secrets.py
-	@echo "✓ gate 通过（Python 语法 + shell 语法 + 无硬编码口令）"
+	@echo "✓ gate 通过（Python 语法 + shell 语法 + 单元测试 + 无硬编码口令）"
 
 ci: ## 本地全量门禁（合并/推送前手动跑）：gate + 端到端验收（约 2 分钟，会重置演示数据）
 	@$(MAKE) gate

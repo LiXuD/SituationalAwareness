@@ -862,8 +862,10 @@ class KafkaConsumer:
     def close(self):
         try:
             self.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            # 关闭前最后一次提交位点失败：重启后可能从旧位点续读 → 重复消费（非丢数据）
+            print(f"[kafka] 关闭前提交位点失败（重启后可能重复消费）: "
+                  f"{type(e).__name__}: {e}", flush=True)
         self.client.close()
 
 

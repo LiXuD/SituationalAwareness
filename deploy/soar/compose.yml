@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ssp-soar:latest
+    image: ssp-soar:${SSP_IMAGE_TAG:-2026.09}
     container_name: ssp-soar
     command: python3 /srv/soar_server.py
     # 需要进入宿主(VM)网络命名空间执行 iptables：pid=host + privileged

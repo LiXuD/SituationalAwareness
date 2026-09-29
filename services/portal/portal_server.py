@@ -234,8 +234,9 @@ class Handler(BaseHTTPRequestHandler):
                 "VALUES (?,?,?,?,?,?,?)",
                 (uuid.uuid4().hex, username, action, target, detail,
                  self.client_address[0], _now()))
-        except Exception:
-            pass
+        except Exception as e:
+            # 审计日志是安全相关记录：写入失败不能静默，至少留痕
+            print(f"[portal] 审计日志写入失败: {type(e).__name__}: {e}", flush=True)
 
     # ---------------- 路由 ----------------
     def do_OPTIONS(self):
