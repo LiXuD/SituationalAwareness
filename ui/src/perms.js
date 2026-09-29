@@ -13,6 +13,7 @@ const WRITE = {
   corr: ["admin"],
   asset: ["admin", "asset_admin"],
   discovery: ["admin", "asset_admin"], // I-12 资产测绘：采纳/忽略/触发（只读角色仍可查看候选）
+  branches: ["admin"],                 // I-13 多分支汇聚：分支登记/探测（只读角色仍可查看状态）
   soar: ["admin", "ops"],
   traffic: ["admin", "ops", "analyst"], // 流量查询/导出为只读 GET，这里仅占位
   users: ["admin"],

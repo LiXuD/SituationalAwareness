@@ -1,0 +1,45 @@
+# 中心汇聚层：Kafka（单节点 KRaft，无 ZooKeeper）
+#
+# 定位：各分支边缘代理（Filebeat）把原始日志投递到本 Kafka 的 ssp-raw 主题，
+#       中心 Logstash 从该主题消费后做 ECS 归一与入库。Kafka 即"多分支汇聚层"，
+#       同时为 R-15 外部日志源适配器 / 未来流式关联预留统一入口。
+#
+# 相对路径以本文件所在目录为基准：deploy/kafka
+services:
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: ssp-kafka
+    hostname: kafka
+    environment:
+      # --- KRaft 单节点（broker + controller 同进程） ---
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      # --- POC 单节点：副本因子一律 1 ---
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      # --- 主题：自动创建 + 24h 保留（POC 演示够用） ---
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_NUM_PARTITIONS=3
+      - KAFKA_LOG_RETENTION_HOURS=24
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    networks: [ssp]
+    restart: unless-stopped
+
+volumes:
+  kafka-data:

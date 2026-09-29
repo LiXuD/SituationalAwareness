@@ -26,6 +26,7 @@ portal_server.py —— 平台统一后端（BFF）+ 统一登录 / 会话 / 角
   /api/asset/*            统一资产库
   /api/soar/*             SOAR 拉黑审批
   /api/discovery/*        资产测绘（候选池 / 采纳 / 忽略 / 配置 / 触发）
+  /api/branches/*         多分支汇聚（分支登记 / 汇聚健康 / 探测）
   GET  /health            平台与上游连通性
 
 环境变量
@@ -33,6 +34,7 @@ portal_server.py —— 平台统一后端（BFF）+ 统一登录 / 会话 / 角
   PORTAL_PORT 8093 | USERS_FILE /srv/users.json | SESSION_TTL_SECONDS 28800
   OPENSEARCH_URL | CORRELATOR_URL | ASSET_URL | SOAR_URL | ARKIME_URL/ARKIME_USER/ARKIME_PASS
   DISCOVERY_INTERVAL_SECONDS 3600（资产测绘定时；0=关闭）
+  BRANCH_HEALTH_INTERVAL_SECONDS 300（分支汇聚健康探测；0=关闭）
 """
 import hashlib
 import hmac
@@ -75,6 +77,7 @@ WRITE_ROLES = {                      # 写操作授权（未列出的模块默�
     "asset":   {"asset_admin", "admin"},
     "soar":    {"ops", "admin"},
     "discovery": {"asset_admin", "admin"},   # I-12 资产测绘：采纳/忽略/触发
+    "branches":  {"admin"},                  # I-13 多分支汇聚：分支登记/探测
 }
 
 _PROTO_MAP = {"6": "tcp", "tcp": "tcp", "17": "udp", "udp": "udp", "1": "icmp", "icmp": "icmp"}
@@ -595,6 +598,57 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(st, obj)
                 return
 
+        # ---- 多分支汇聚（I-13：分支登记 + 汇聚健康；落业务库）----
+        if path.startswith("/api/branches"):
+            import branches
+            sub = path[len("/api/branches"):]
+
+            def _need_admin():
+                if sess["role"] == "admin":
+                    return True
+                self._json(403, {"error": "仅管理员可维护分支登记与探测",
+                                 "role": sess["role"], "required": ["admin"]})
+                return False
+
+            if sub in ("", "/") and not write:
+                self._json(*branches.list_branches())
+                return
+            if sub == "/stats" and not write:
+                self._json(*branches.stats())
+                return
+            if sub == "/probe" and write:
+                if not _need_admin():
+                    return
+                st, obj = branches.probe()
+                if st == 200:
+                    self._audit(sess["username"], "branch_probe", "/api/branches/probe",
+                                "在线 %s / 离线 %s" % (obj.get("state_counts", {}).get("ok", 0),
+                                                     obj.get("state_counts", {}).get("no_data", 0)))
+                self._json(st, obj)
+                return
+            if write:
+                if not _need_admin():
+                    return
+                if sub in ("", "/"):
+                    st, obj = branches.create_branch(self._json_body())
+                    if st == 200:
+                        self._audit(sess["username"], "branch_create", obj.get("branch_id", ""), "")
+                    self._json(st, obj)
+                    return
+                bid = sub.lstrip("/")
+                if self.command == "PUT":
+                    st, obj = branches.update_branch(bid, self._json_body())
+                    if st == 200:
+                        self._audit(sess["username"], "branch_update", bid, "")
+                    self._json(st, obj)
+                    return
+                if self.command == "DELETE":
+                    st, obj = branches.delete_branch(bid)
+                    if st == 200:
+                        self._audit(sess["username"], "branch_delete", bid, "")
+                    self._json(st, obj)
+                    return
+
         # ---- 通用透传 + 授权 ----
         parts = path.split("/")
         if len(parts) >= 4 and parts[1] == "api" and parts[2] in UPSTREAMS:
@@ -645,6 +699,36 @@ def _start_discovery_timer():
     print(f"[portal] 资产测绘定时任务已启动：每 {interval}s", flush=True)
 
 
+def _start_branch_timer():
+    """I-13：后台定时探测分支汇聚健康（默认 5 分钟；BRANCH_HEALTH_INTERVAL_SECONDS=0 关闭）。"""
+    try:
+        interval = int(os.environ.get("BRANCH_HEALTH_INTERVAL_SECONDS", "300"))
+    except ValueError:
+        interval = 300
+    if interval <= 0:
+        print("[portal] 分支汇聚健康探测：已关闭（BRANCH_HEALTH_INTERVAL_SECONDS=0）", flush=True)
+        return
+    import threading
+    import branches
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                st, obj = branches.probe()
+                if st == 200:
+                    sc = obj.get("state_counts") or {}
+                    print(f"[portal] 分支汇聚探测：在线 {sc.get('ok', 0)} / 离线 "
+                          f"{sc.get('no_data', 0)} / 未登记 {len(obj.get('unregistered') or [])}", flush=True)
+                else:
+                    print(f"[portal] 分支汇聚探测失败：HTTP {st} {obj.get('error')}", flush=True)
+            except Exception as e:
+                print(f"[portal] 分支汇聚探测异常：{type(e).__name__}: {e}", flush=True)
+
+    threading.Thread(target=loop, name="branch-health", daemon=True).start()
+    print(f"[portal] 分支汇聚健康探测已启动：每 {interval}s", flush=True)
+
+
 def main():
     try:
         n = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
@@ -656,6 +740,7 @@ def main():
     print(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}", flush=True)
     print(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}", flush=True)
     _start_discovery_timer()
+    _start_branch_timer()
     srv.serve_forever()
 
 

@@ -1,0 +1,3 @@
+{"ts":1789787400.111,"uid":"B2bj0001","id.orig_h":"10.7.1.41","id.orig_p":52001,"id.resp_h":"119.29.29.29","id.resp_p":53,"proto":"udp","service":"dns","duration":0.03,"orig_bytes":58,"resp_bytes":140,"conn_state":"SF"}
+{"ts":1789787460.222,"uid":"B2bj0002","id.orig_h":"10.7.1.41","id.orig_p":52002,"id.resp_h":"198.51.100.88","id.resp_p":80,"proto":"tcp","service":"http","duration":1.1,"orig_bytes":640,"resp_bytes":5120,"conn_state":"SF"}
+{"ts":1789787520.333,"uid":"B2bj0003","id.orig_h":"10.7.1.42","id.orig_p":52003,"id.resp_h":"8.8.8.8","id.resp_p":53,"proto":"udp","service":"dns","duration":0.04,"orig_bytes":70,"resp_bytes":160,"conn_state":"SF"}

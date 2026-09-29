@@ -1,0 +1,37 @@
+# 分支边缘代理编排（I-13 多分支汇聚）
+#
+# 每个服务 = 一个模拟分支机构：独立日志目录 + 独立 Filebeat 实例，
+# 各自向中心 Kafka（ssp-raw 主题）投递带 branch 标记的原始日志。
+# 这样"某分支专线断"只需停该分支容器，其他分支与中心完全不受影响。
+#
+# 相对路径以本文件所在目录为基准：deploy/branch
+x-branch-agent: &branch-agent
+  image: docker.elastic.co/beats/filebeat:7.17.23
+  user: root
+  command: ["filebeat", "-e", "-strict.perms=false"]
+  volumes:
+    - ./filebeat-branch.yml:/usr/share/filebeat/filebeat.yml:ro
+  depends_on: [kafka]
+  networks: [ssp]
+  restart: unless-stopped
+
+services:
+  filebeat-branch-sh:
+    <<: *branch-agent
+    container_name: ssp-filebeat-sh
+    environment:
+      - BRANCH_ID=sh-01
+      - BRANCH_SITE=上海
+    volumes:
+      - ./filebeat-branch.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ../../logs/branch-sh:/var/log/branch:ro
+
+  filebeat-branch-bj:
+    <<: *branch-agent
+    container_name: ssp-filebeat-bj
+    environment:
+      - BRANCH_ID=bj-01
+      - BRANCH_SITE=北京
+    volumes:
+      - ./filebeat-branch.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ../../logs/branch-bj:/var/log/branch:ro

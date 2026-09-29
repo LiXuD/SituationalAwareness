@@ -8,5 +8,5 @@ services:
     volumes:
       - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ../../logs:/var/log/probes:ro
-    depends_on: [logstash]
+    depends_on: [kafka]
     networks: [ssp]

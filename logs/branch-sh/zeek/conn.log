@@ -1,0 +1,3 @@
+{"ts":1789787100.101,"uid":"B1sh0001","id.orig_h":"10.9.1.31","id.orig_p":51001,"id.resp_h":"114.114.114.114","id.resp_p":53,"proto":"udp","service":"dns","duration":0.02,"orig_bytes":64,"resp_bytes":128,"conn_state":"SF"}
+{"ts":1789787160.202,"uid":"B1sh0002","id.orig_h":"10.9.1.31","id.orig_p":51002,"id.resp_h":"223.5.5.5","id.resp_p":443,"proto":"tcp","service":"ssl","duration":1.4,"orig_bytes":2048,"resp_bytes":8192,"conn_state":"SF"}
+{"ts":1789787220.303,"uid":"B1sh0003","id.orig_h":"10.9.1.32","id.orig_p":51003,"id.resp_h":"203.0.113.77","id.resp_p":80,"proto":"tcp","service":"http","duration":0.9,"orig_bytes":512,"resp_bytes":4096,"conn_state":"SF"}

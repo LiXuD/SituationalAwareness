@@ -224,3 +224,13 @@ table.sla td:first-child,table.sla th:first-child{text-align:left}
 .st.reverted{color:var(--acc);border-color:var(--acc)}
 .ioc{color:var(--err);font-size:11px}
 code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
+
+/* ============ 分支汇聚（I-13） ============ */
+.page-branches .wrap{padding:16px 20px;display:grid;gap:16px}
+.bd{display:inline-flex;align-items:center;gap:6px}
+.bd .dot.ok{background:var(--ok)}
+.bd .dot.stale{background:var(--warn)}
+.bd .dot.no_data{background:var(--err)}
+.bd .dot.disabled{background:#64748b}
+.bd .dot.unregistered{background:var(--acc)}
+.bd .dot.unknown{background:#64748b}

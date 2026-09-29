@@ -17,7 +17,9 @@
         "@timestamp": { "type": "date" },
         "fields": {
           "properties": {
-            "log_source": { "type": "keyword" }
+            "log_source": { "type": "keyword" },
+            "branch":      { "type": "keyword" },
+            "branch_site": { "type": "keyword" }
           }
         },
         "event": {
@@ -126,6 +128,12 @@
         "observer": {
           "properties": {
             "name": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+          }
+        },
+        "ssp": {
+          "properties": {
+            "branch":      { "type": "keyword" },
+            "branch_site": { "type": "keyword" }
           }
         },
         "log": {

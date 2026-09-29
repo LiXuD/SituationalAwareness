@@ -1,0 +1,54 @@
+# 分支边缘代理 —— 每个分支机构一个 Filebeat 实例（I-13 多分支汇聚）
+#
+# 与总部代理（deploy/filebeat/filebeat.yml）的区别：
+#   · 只读本分支的日志目录 /var/log/branch
+#   · fields 里带 branch / branch_site（由容器环境变量 BRANCH_ID / BRANCH_SITE 注入）
+#   · 输出到中心 Kafka（汇聚层），而不是直连 Logstash
+#
+# 分支区分是"逻辑的"（靠字段），不是物理端口：新增分支只需加一个本文件的实例，
+# 无需改中心端口/防火墙。
+filebeat.inputs:
+  - type: filestream
+    id: suricata-eve
+    enabled: true
+    paths:
+      - /var/log/branch/suricata/*.json
+    fields:
+      log_source: suricata
+      branch: "${BRANCH_ID}"
+      branch_site: "${BRANCH_SITE}"
+
+  - type: filestream
+    id: zeek-logs
+    enabled: true
+    paths:
+      - /var/log/branch/zeek/*.log
+    exclude_lines: ['^#']
+    fields:
+      log_source: zeek
+      branch: "${BRANCH_ID}"
+      branch_site: "${BRANCH_SITE}"
+
+  - type: filestream
+    id: wazuh-alerts
+    enabled: true
+    paths:
+      - /var/log/branch/wazuh/*.json
+    fields:
+      log_source: wazuh
+      branch: "${BRANCH_ID}"
+      branch_site: "${BRANCH_SITE}"
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+
+# 中心汇聚层：投递到 Kafka 的 ssp-raw 主题（中心 Logstash 从这里消费做 ECS 归一）
+output.kafka:
+  hosts: ["kafka:9092"]
+  topic: "ssp-raw"
+  required_acks: 1
+  compression: gzip
+
+logging.level: info
+logging.to_files: false

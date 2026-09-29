@@ -324,6 +324,24 @@ CREATE TABLE IF NOT EXISTS asset_candidates (
 
 CREATE INDEX IF NOT EXISTS idx_cand_status ON asset_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_cand_ip ON asset_candidates(ip);
+
+-- I-13 多分支汇聚：分支机构登记与汇聚健康
+CREATE TABLE IF NOT EXISTS branches (
+    branch_id    TEXT PRIMARY KEY,                 -- = 事件里的 ssp.branch，如 hq / sh-01
+    name         TEXT NOT NULL DEFAULT '',
+    site         TEXT NOT NULL DEFAULT '',
+    cidr         TEXT NOT NULL DEFAULT '',         -- 该分支网段（逗号分隔）
+    link_type    TEXT NOT NULL DEFAULT 'leased',   -- leased（专线）/ vpn / internet
+    enabled      INTEGER NOT NULL DEFAULT 1,       -- 0=停用（不参与离线判定）
+    expect_interval_seconds INTEGER NOT NULL DEFAULT 3600,
+    last_seen    INTEGER,                          -- 最近一次收到该分支事件的 epoch 秒
+    state        TEXT NOT NULL DEFAULT 'unknown',  -- ok/stale/no_data/disabled/unregistered/unknown
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_branches_state ON branches(state);
 """
 
 # I-12：assets 表新增的「观测类」列（幂等补列；人工字段不受影响）

@@ -29,6 +29,8 @@
         },
         "ssp": {
           "properties": {
+            "branch":      { "type": "keyword" },
+            "branch_site": { "type": "keyword" },
             "alert": {
               "properties": {
                 "id":               { "type": "keyword" },
@@ -92,6 +94,7 @@
         "related": {
           "properties": {
             "log_sources": { "type": "keyword" },
+            "branches":    { "type": "keyword" },
             "event_count": { "type": "integer" },
             "event_ids":   { "type": "keyword" },
             "entities": {

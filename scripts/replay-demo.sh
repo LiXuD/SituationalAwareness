@@ -53,14 +53,17 @@ else
   rm -f "$STAGE"/suricata/*.json "$STAGE"/zeek/*.log "$STAGE"/wazuh/*.json 2>/dev/null || true
 fi
 
-# --- 3. 重建 filebeat 触发重放 -------------------------------------------------
-say "强制重建 filebeat（重置读取位点）..."
-docker compose -f "$COMPOSE" up -d --force-recreate filebeat >/dev/null
+# --- 3. 重建采集端触发重放 -----------------------------------------------------
+# 总部 filebeat 与各分支边缘代理都重建：filestream 的读取位点在容器可写层，
+# 重建即重置位点、从头重放被监听路径（否则删索引后分支数据不会回填）。
+say "强制重建 filebeat 与分支边缘代理（重置读取位点）..."
+docker compose -f "$COMPOSE" up -d --force-recreate filebeat filebeat-branch-sh filebeat-branch-bj >/dev/null
 
 # --- 4. 等待入库 ---------------------------------------------------------------
 BASE=9
+BRANCH=12                                          # sh-01 6 条 + bj-01 6 条（I-13 分支数据）
 EXPECT=$BASE
-[ "$MODE" = "replay" ] && EXPECT=$((BASE + 15))   # 演示集 6+6+3 = 15 条
+[ "$MODE" = "replay" ] && EXPECT=$((BASE + 15 + BRANCH))   # 演示集 15 条
 say "等待事件入库（期望 ≈ ${EXPECT} 条，最多 60s）..."
 for i in $(seq 1 30); do
   n="$(search_count "ssp-events")"

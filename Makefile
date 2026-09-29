@@ -12,7 +12,8 @@ PY := python3
 .DEFAULT_GOAL := help
 
 .PHONY: help init up down ps logs templates demo verify health clean \
-        pg-up pg-init pg-portal pg-stop lint discover discovery-status
+        pg-up pg-init pg-portal pg-stop lint discover discovery-status \
+        branch-demo branch-status branch-down branch-up
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) | \
@@ -60,6 +61,19 @@ discover: ## 触发一次资产被动测绘（Zeek 连接日志 → 候选池）
 
 discovery-status: ## 查看资产测绘候选统计
 	$(PY) scripts/discovery-run.py --stats
+
+# ----------------------------- 多分支汇聚（I-13） ----------------------------- #
+branch-demo: ## 重建各分支边缘代理，重新采集分支数据（Kafka 汇聚）
+	bash scripts/replay-branch.sh
+
+branch-status: ## 查看各分支事件量与最新上报时间
+	bash scripts/replay-branch.sh --status
+
+branch-down: ## 模拟某分支断链，如 make branch-down B=sh-01
+	bash scripts/replay-branch.sh --down $(B)
+
+branch-up: ## 恢复某分支，如 make branch-up B=sh-01
+	bash scripts/replay-branch.sh --up $(B)
 
 # ----------------------------- PostgreSQL（可选） ----------------------------- #
 pg-up: ## 启动 PostgreSQL 容器

@@ -38,6 +38,30 @@ DEFAULT_USERS = [
 ]
 DEFAULT_PASSWORD = "REDACTED-SSP-PWD"
 
+# I-13 多分支汇聚：默认分支登记（与 logs/branch-*、总部链路一致）
+DEFAULT_BRANCHES = [
+    # branch_id, name, site, cidr, link_type, expect_interval_seconds
+    ("hq", "总部", "总部机房", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16", "leased", 3600),
+    ("sh-01", "上海分行", "上海", "10.9.0.0/16", "leased", 3600),
+    ("bj-01", "北京分行", "北京", "10.7.0.0/16", "leased", 3600),
+]
+
+
+def seed_branches():
+    """幂等登记默认分支（表为空时才写，避免覆盖运维既有登记）。"""
+    if db.query_one("SELECT 1 AS x FROM branches LIMIT 1"):
+        n = db.query_one("SELECT COUNT(*) AS n FROM branches")["n"]
+        print(f"[init-db] branches 表已有 {n} 个分支，跳过种子。")
+        return
+    now = int(time.time())
+    for bid, name, site, cidr, lt, exp in DEFAULT_BRANCHES:
+        db.execute(
+            "INSERT INTO branches (branch_id, name, site, cidr, link_type, enabled, "
+            "expect_interval_seconds, last_seen, state, note, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (bid, name, site, cidr, lt, 1, exp, None, "unknown", "", now, now))
+    print(f"[init-db] 登记默认分支 {len(DEFAULT_BRANCHES)} 个：{'/'.join(b[0] for b in DEFAULT_BRANCHES)}")
+
 
 def hash_password(password, salt=None, iterations=ITER):
     if salt is None:
@@ -68,6 +92,7 @@ def main():
     if db.query_one("SELECT 1 AS x FROM users LIMIT 1"):
         n = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
         print(f"[init-db] users 表已存在 {n} 个账号，跳过种子。")
+        seed_branches()
         return 0
 
     rows = []
@@ -92,6 +117,7 @@ def main():
 
     cnt = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
     print(f"[init-db] 完成，共 {cnt} 个账号。")
+    seed_branches()
     return 0
 
 

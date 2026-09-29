@@ -556,9 +556,13 @@ def geo_index(events):
     return m
 
 
-def build_alert(evt, window, assets, threat_mod, geo_map=None):
+def build_alert(evt, window, assets, threat_mod, geo_map=None, branch_by_id=None):
     rule = RULE_BY_ID[evt["rule_id"]]
     internal_ips = evt.get("internal_ips") or []
+    # I-13 多分支汇聚：从贡献事件回溯其 ssp.branch，带到告警上
+    # （跨分支关联时 related.branches 为完整集合；ssp.branch 取首个用于单值展示/聚合）
+    branch_by_id = branch_by_id or {}
+    branches = sorted({b for b in (branch_by_id.get(i) for i in evt.get("event_ids", [])) if b})
     # 威胁情报比对（I-04）；缺失则标记"情报未匹配"
     threat = {"matched": False, "indicators": [], "enabled": bool(threat_mod)}
     threat_hit = False
@@ -604,21 +608,25 @@ def build_alert(evt, window, assets, threat_mod, geo_map=None):
             "severity": GRADE_SEVERITY[grade], "risk_score": GRADE_RISK[grade],
         },
         "rule": {"id": evt["rule_id"], "name": rule["name"], "description": rule["desc"]},
-        "ssp": {"alert": {
-            "id": _id, "rule_id": evt["rule_id"], "rule_name": rule["name"],
-            "grade": grade, "grade_label": GRADE_SLA_LABEL[grade],
-            "sla_seconds": sla, "sla_label": GRADE_SLA_LABEL[grade],
-            "status": "open",
-            "generated_at": iso(gen), "due_at": iso(due),
-            "first_seen_at": iso(gen), "last_seen_at": iso(gen),
-            "resolved_at": None, "response_action": None,
-            "window_start": iso(window[0]), "window_end": iso(window[1]),
-            "escalation_factors": factors,
-        }},
+        "ssp": {
+            "branch": (branches[0] if branches else None),
+            "alert": {
+                "id": _id, "rule_id": evt["rule_id"], "rule_name": rule["name"],
+                "grade": grade, "grade_label": GRADE_SLA_LABEL[grade],
+                "sla_seconds": sla, "sla_label": GRADE_SLA_LABEL[grade],
+                "status": "open",
+                "generated_at": iso(gen), "due_at": iso(due),
+                "first_seen_at": iso(gen), "last_seen_at": iso(gen),
+                "resolved_at": None, "response_action": None,
+                "window_start": iso(window[0]), "window_end": iso(window[1]),
+                "escalation_factors": factors,
+            },
+        },
         "source": src_obj,
         "destination": dst_obj,
         "related": {
             "log_sources": evt.get("log_sources", []),
+            "branches": branches,
             "event_count": evt.get("event_count", 0),
             "event_ids": evt.get("event_ids", []),
             "entities": {"internal_ips": internal_ips, "external_ips": ext_ips},
@@ -741,8 +749,9 @@ def run_correlation(window_minutes=None, anchor_iso=None):
             candidates.append(c)
 
     alert_docs = []
+    branch_by_id = {e.get("_id"): get_in(e, "ssp.branch") for e in events if e.get("_id")}
     for c in candidates:
-        alert_docs.append(build_alert(c, window, assets, threat_mod, geo_map))
+        alert_docs.append(build_alert(c, window, assets, threat_mod, geo_map, branch_by_id))
 
     write_res = upsert_alerts(alert_docs)
     return {

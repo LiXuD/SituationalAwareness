@@ -4,6 +4,7 @@ import * as search from "./pages/search.js";
 import * as traffic from "./pages/traffic.js";
 import * as assets from "./pages/assets.js";
 import * as discovery from "./pages/discovery.js";
+import * as branches from "./pages/branches.js";
 import * as soar from "./pages/soar.js";
 import * as users from "./pages/users.js";
 
@@ -13,6 +14,7 @@ const routes = {
   "/traffic": traffic,
   "/assets": assets,
   "/discovery": discovery,
+  "/branches": branches,
   "/soar": soar,
   "/users": users,
 };

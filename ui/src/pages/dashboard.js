@@ -25,6 +25,7 @@ export function mount(root) {
       </select>
       <span id="clock" class="mono"></span>
       <span id="src-health" class="src-health" title="探针数据源健康（PRD §10：断连标记异常，不影响其它源）"></span>
+      <span id="branch-health" class="src-health" title="分支汇聚健康（I-13：分支机构上报是否正常）" onclick="location.hash='#/branches'" style="cursor:pointer"></span>
     </div>
     <div class="kpis" id="kpis"><div class="kpi"><div class="lab">加载中…</div></div></div>
     <div class="grid">
@@ -284,6 +285,18 @@ async function load() {
         return `<span style="color:${c};margin-left:6px" title="${esc(s.source)}：${lab}｜事件 ${s.events}｜最新 ${esc(s.latest || "-")}">● ${esc(s.source)}</span>`;
       }).join("");
     } catch (e) { document.getElementById("src-health").textContent = "数据源状态获取失败"; }
+
+    // I-13 分支汇聚：状态条（在线 / 共 N），点击跳「分支汇聚」页
+    try {
+      const bs = await apiGet("/api/branches/stats");
+      const ok = bs.online || 0, total = bs.total || 0;
+      const un = bs.unregistered || 0;
+      const color = (bs.offline || 0) > 0 ? "var(--p0)" : "var(--ok)";
+      document.getElementById("branch-health").innerHTML =
+        `分支 <span style="color:${color}">●</span> 在线 ${ok}/${total}` +
+        (un ? `<span style="color:var(--acc);margin-left:6px">未登记 ${un}</span>` : "") +
+        (bs.probe_error ? `<span style="color:var(--p1);margin-left:6px">探测异常</span>` : "");
+    } catch (e) { document.getElementById("branch-health").textContent = "分支状态获取失败"; }
 
     const byGrade = {}; let threat = 0, blocked = 0;
     for (const a of alerts) {

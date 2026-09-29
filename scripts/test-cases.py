@@ -19,6 +19,13 @@ I-12 资产测绘（本脚本追加，正例 A9~A11 + 反例 N5~N7）：
   N6  越权 IP 采纳   授权网段外候选 → 422 拒绝
   N7  越权角色       analyst 触发/采纳 → 403（读候选仍 200）
 
+I-13 多分支汇聚（本脚本追加，正例 A13~A15 + 反例 N10~N11）：
+  A13 分支打标入库    事件带 ssp.branch，可按分支检索/聚合
+  A14 分支登记与探测  登记/在线判定/停用判定（disabled）
+  A15 分支独立        某分支断链 → 该分支 no_data，**其他分支事件量不变**
+  N10 未登记分支      事件里有但未登记 → 提示 unregistered，不阻断入库
+  N11 探测遇 OS 不可达 探测失败但**不误改分支状态**，平台列表仍可读
+
 用法：
     python3 scripts/test-cases.py                 # 正例回归 + 全部反例
     python3 scripts/test-cases.py --skip-positive # 只跑反例
@@ -217,6 +224,56 @@ def prime_discovery(admin_tok, run_tok=None):
     reset_discovery()
     disc_config(admin_tok, {"discovery.min_obs": "1", "discovery.window_minutes": "20160"})
     return disc_run(run_tok or admin_tok)
+
+
+# --------------------------- I-13 多分支汇聚辅助 --------------------------- #
+def branch_agg():
+    """OpenSearch 侧按 ssp.branch 聚合事件数。"""
+    st, d = http("POST", f"{OS}/ssp-events/_search",
+                 {"size": 0, "aggs": {"b": {"terms": {"field": "ssp.branch", "size": 50}}}})
+    if not isinstance(d, dict):
+        return {}
+    return {b["key"]: b["doc_count"]
+            for b in d.get("aggregations", {}).get("b", {}).get("buckets", [])}
+
+
+def branch_list(tok):
+    st, d = http("GET", f"{UI}/api/branches", headers={"Cookie": f"ssp_session={tok}"})
+    return st, d
+
+
+def branch_probe(tok):
+    return http("POST", f"{UI}/api/branches/probe", {},
+                headers={"Cookie": f"ssp_session={tok}"})
+
+
+BRANCH_DEFAULTS = {
+    "hq": {"name": "总部", "site": "总部机房",
+           "cidr": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16", "link_type": "leased",
+           "expect_interval_seconds": 3600, "enabled": 1},
+    "sh-01": {"name": "上海分行", "site": "上海", "cidr": "10.9.0.0/16",
+              "link_type": "leased", "expect_interval_seconds": 3600, "enabled": 1},
+    "bj-01": {"name": "北京分行", "site": "北京", "cidr": "10.7.0.0/16",
+              "link_type": "leased", "expect_interval_seconds": 3600, "enabled": 1},
+}
+
+
+def restore_branches(tok):
+    """收尾：确保三个默认分支都已登记且启用。
+
+    注意：/api/branches 列表里含有「未登记」的合成条目（registered=false），
+    它们**不是**真实登记项，不能据此判定"已存在"，否则会漏建。
+    """
+    h = {"Cookie": f"ssp_session={tok}"}
+    st, d = branch_list(tok)
+    have = {it["branch_id"] for it in ((d or {}).get("items") or []) if it.get("registered")}
+    for bid, cfg in BRANCH_DEFAULTS.items():
+        body = dict(cfg, branch_id=bid)
+        if bid in have:
+            http("PUT", f"{UI}/api/branches/{bid}", body, headers=h)
+        else:
+            http("POST", f"{UI}/api/branches", body, headers=h)
+    branch_probe(tok)          # 刷新状态（新建项的 state 初值为 unknown）
 
 
 def rec(tid, name, ok, detail=""):
@@ -556,10 +613,151 @@ def case_n7_discovery_forbidden():
     return rec("N7", "测绘:越权角色403", ok, f"run={st1} adopt={st2}（应 403）；读候选={st3}（应 200）")
 
 
+# =========================================================================== #
+# I-13 多分支汇聚（分支身份 / 分支登记 / 分支独立）
+# =========================================================================== #
+def case_a13_branch_tagging():
+    print("\n▶ A13 分支打标入库（ssp.branch 可按分支检索与聚合）", flush=True)
+    buckets = branch_agg()
+    need = {"hq", "sh-01", "bj-01"}
+    got = need <= set(buckets)
+    filt = {}
+    for br in ("sh-01", "bj-01"):
+        st, d = http("POST", f"{OS}/ssp-events/_search",
+                     {"size": 1, "query": {"term": {"ssp.branch": br}},
+                      "_source": ["ssp.branch", "ssp.branch_site"]})
+        hits = (d or {}).get("hits", {}) if isinstance(d, dict) else {}
+        total = hits.get("total", {}).get("value", -1)
+        src = ((hits.get("hits") or [{}])[0] or {}).get("_source", {})
+        filt[br] = (total, (src.get("ssp") or {}).get("branch_site"))
+    ok = (got and all(filt[b][0] == buckets.get(b) for b in filt)
+          and all(filt[b][1] for b in filt))
+    detail = (f"分支聚合={buckets}；term 过滤=" +
+              "; ".join(f"{b}: 命中 {filt[b][0]}（聚合 {buckets.get(b)}）站点={filt[b][1]}" for b in filt))
+    return rec("A13", "分支打标入库", ok, detail)
+
+
+def case_a14_branch_registry():
+    print("\n▶ A14 分支登记与汇聚探测（在线判定 / 停用判定）", flush=True)
+    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("A14", "分支登记与探测", False, "登录失败")
+    h = {"Cookie": f"ssp_session={tok}"}
+    st, d = branch_list(tok)
+    items = {it["branch_id"]: it for it in ((d or {}).get("items") or [])}
+    reg_ok = all(items.get(b, {}).get("state") == "ok"
+                 for b in ("hq", "sh-01", "bj-01"))
+    st2, p = branch_probe(tok)
+    probe_ok = st2 == 200 and (p.get("state_counts", {}) or {}).get("ok", 0) >= 3
+    # 停用 → disabled；恢复 → ok
+    st3, _ = http("PUT", f"{UI}/api/branches/bj-01", dict(BRANCH_DEFAULTS["bj-01"], enabled=0), headers=h)
+    st4, p2 = branch_probe(tok)
+    bj = next((x for x in ((p2 or {}).get("branches") or []) if x["branch_id"] == "bj-01"), {})
+    dis_ok = st3 == 200 and bj.get("state") == "disabled"
+    st5, _ = http("PUT", f"{UI}/api/branches/bj-01", dict(BRANCH_DEFAULTS["bj-01"], enabled=1), headers=h)
+    st6, p3 = branch_probe(tok)
+    bj2 = next((x for x in ((p3 or {}).get("branches") or []) if x["branch_id"] == "bj-01"), {})
+    back_ok = st5 == 200 and bj2.get("state") == "ok"
+    ok = reg_ok and probe_ok and dis_ok and back_ok
+    detail = (f"登记状态={ {k: v.get('state') for k, v in items.items()} }；"
+              f"探测={p.get('state_counts')}；停用后 bj-01={bj.get('state')}（应 disabled）；"
+              f"恢复后={bj2.get('state')}（应 ok）")
+    return rec("A14", "分支登记与探测", ok, detail)
+
+
+def case_a15_branch_isolation():
+    print("\n▶ A15 分支独立（某分支断链不影响其他分支）", flush=True)
+    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("A15", "分支独立", False, "登录失败")
+    h = {"Cookie": f"ssp_session={tok}"}
+    b0 = branch_agg()
+    if "bj-01" not in b0:
+        return rec("A15", "分支独立", False, f"前置不满足：无 bj-01 事件 {b0}")
+    # 模拟 bj-01 断链：清掉该分支已入湖事件（无存量 → 判定立即转 no_data）
+    http("POST", f"{OS}/ssp-events/_delete_by_query?refresh=true",
+         {"query": {"term": {"ssp.branch": "bj-01"}}}, timeout=60)
+    st, p = branch_probe(tok)
+    states = {x["branch_id"]: x["state"] for x in ((p or {}).get("branches") or [])}
+    b1 = branch_agg()
+    ok = (st == 200 and states.get("bj-01") == "no_data"
+          and states.get("sh-01") == "ok" and states.get("hq") == "ok"
+          and "bj-01" not in b1
+          and b1.get("sh-01") == b0.get("sh-01") and b1.get("hq") == b0.get("hq"))
+    detail = (f"断链前={b0}；断链后={b1}（bj-01 应消失，sh-01/hq 应不变）；状态={states}")
+    # 恢复：重建该分支边缘代理，重新采集
+    sh(f"{COMPOSE} up -d --force-recreate filebeat-branch-bj")
+    for _ in range(20):
+        time.sleep(2)
+        if "bj-01" in branch_agg():
+            break
+    branch_probe(tok)
+    return rec("A15", "分支独立", ok, detail)
+
+
+def case_n10_unregistered_branch():
+    print("\n▶ N10 未登记分支（提示 unregistered，不阻断入库）", flush=True)
+    tok = portal_login("admin", "REDACTED-SSP-PWD")
+    if not tok:
+        return rec("N10", "未登记分支提示", False, "登录失败")
+    h = {"Cookie": f"ssp_session={tok}"}
+    # 摘掉 hq 的登记 —— 事件里仍有 hq，应被判为 unregistered
+    http("DELETE", f"{UI}/api/branches/hq", headers=h)
+    st, d = branch_list(tok)
+    hq = next((x for x in ((d or {}).get("items") or []) if x["branch_id"] == "hq"), None)
+    st2, p = branch_probe(tok)
+    unreg = (p or {}).get("unregistered") or []
+    listed = bool(hq) and hq.get("state") == "unregistered" and hq.get("registered") is False
+    ok = (st == 200 and listed and "hq" in unreg and st2 == 200)
+    detail = (f"列表含 hq={bool(hq)} state={hq and hq.get('state')} registered={hq and hq.get('registered')}；"
+              f"探测 unregistered={unreg}（应含 hq）")
+    restore_branches(tok)          # 恢复 hq 登记
+    return rec("N10", "未登记分支提示", ok, detail)
+
+
+def case_n11_branch_probe_os_down():
+    print("\n▶ N11 分支探测：OpenSearch 不可达（探测失败但不误改状态）", flush=True)
+    tok0 = portal_login("admin", "REDACTED-SSP-PWD")
+    if not tok0:
+        return rec("N11", "分支探测:OS不可达", False, "登录失败")
+    st0, d0 = branch_list(tok0)
+    before = {it["branch_id"]: it["state"] for it in ((d0 or {}).get("items") or [])}
+
+    ov = "/tmp/ssp-test-osdown-branch.yml"
+    with open(ov, "w") as f:
+        f.write("services:\n  portal:\n    environment:\n      OPENSEARCH_URL: http://127.0.0.1:9\n")
+    sh(f"{COMPOSE} -f {ov} up -d --force-recreate portal")
+    ready = wait_port(f"{PORTAL}/health")
+    tok = None
+    for _ in range(15):
+        tok = portal_login("admin", "REDACTED-SSP-PWD")
+        if tok:
+            break
+        time.sleep(1)
+    if not ready or not tok:
+        sh(f"{COMPOSE} up -d --force-recreate portal")
+        wait_port(f"{PORTAL}/health")
+        return rec("N11", "分支探测:OS不可达", False, f"portal 未能就绪（ready={ready}）")
+
+    st, p = branch_probe(tok)
+    st2, d = branch_list(tok)
+    after = {it["branch_id"]: it["state"] for it in ((d or {}).get("items") or [])}
+    ok = (st == 502 and st2 == 200 and (d or {}).get("probe_error")
+          and after == before)
+    detail = (f"probe HTTP={st}（应 502）；列表 HTTP={st2}（应 200，仍可读）；"
+              f"探测错误={bool((d or {}).get('probe_error'))}；状态 {before}→{after}（应不变）")
+    sh(f"{COMPOSE} up -d --force-recreate portal")      # 还原
+    wait_port(f"{PORTAL}/health")
+    return rec("N11", "分支探测:OS不可达", ok, detail)
+
+
 CASES = {
     "A9": case_a9_discovery_run,
     "A10": case_a10_discovery_adopt,
     "A11": case_a11_discovery_ignore,
+    "A13": case_a13_branch_tagging,
+    "A14": case_a14_branch_registry,
+    "A15": case_a15_branch_isolation,
     "N1": case_n1_probe_down,
     "N2": case_n2_approval_timeout,
     "N3": case_n3_block_failure,
@@ -567,6 +765,8 @@ CASES = {
     "N5": case_n5_discovery_os_down,
     "N6": case_n6_discovery_out_of_range,
     "N7": case_n7_discovery_forbidden,
+    "N10": case_n10_unregistered_branch,
+    "N11": case_n11_branch_probe_os_down,
 }
 
 
@@ -592,6 +792,12 @@ def main():
             rec(tid, "异常", False, f"{type(e).__name__}: {e}")
 
     clear_discovery_config()          # 收尾：移除测绘配置覆写，恢复默认（min_obs=3 等）
+    try:                              # 收尾：确保默认分支登记齐全且启用（N10 会临时摘除 hq）
+        _adm = portal_login("admin", "REDACTED-SSP-PWD")
+        if _adm:
+            restore_branches(_adm)
+    except Exception:
+        pass
 
     print("\n" + "=" * 74)
     npass = sum(1 for r in RESULTS if r[2])

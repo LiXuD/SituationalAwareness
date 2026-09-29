@@ -12,32 +12,45 @@
 ```
                   统一前端 SPA  (ui, nginx :8088)
                             │  同源反代 /api
-                统一业务后端 portal (:8093)       ← 身份/会话/资产/测绘/审批/审计
-                    ├── 业务库 SQLite / PostgreSQL  ← 用户/会话/资产/候选池/审批/黑名单/配置/审计
+                统一业务后端 portal (:8093)       ← 身份/会话/资产/测绘/分支/审批/审计
+                    ├── 业务库 SQLite / PostgreSQL  ← 用户/会话/资产/候选池/分支/审批/黑名单/配置/审计
                     ├── 资产测绘引擎（进程内）        ← Zeek 流量 → 候选池（I-12）
+                    ├── 分支汇聚健康探测（进程内）     ← 按 ssp.branch 判活（I-13）
                     └── 检索与时序层（保留）
                           ├── OpenSearch (:9200)   事件 / 告警
                           └── Arkime (:8005)       流量 / PCAP
-                采集管道（保留）Filebeat → Logstash
+                多分支汇聚层  Kafka (:9092, ssp-raw)  ← 各分支边缘代理汇聚（I-13）
+                采集端  Filebeat(总部 hq) + Filebeat(分支 sh-01 / bj-01) → Kafka → Logstash(ECS 归一)
                 落黑执行器 soar (:8092, privileged) iptables
                 关联引擎 correlator (:8091)
 ```
 
-**数据分层原则**：业务对象（用户/会话/资产/候选池/审批/黑名单/配置/审计）入**平台自有业务库**；
+**数据分层原则**：业务对象（用户/会话/资产/候选池/分支/审批/黑名单/配置/审计）入**平台自有业务库**；
 事件/告警/流量等检索型数据留在 OpenSearch/Arkime。
+
+**多分支汇聚（I-13）**：分支身份 `fields.branch` → `ssp.branch`，经 **Kafka(`ssp-raw`)** 汇聚；
+单分支断链只影响该分支状态（`no_data`），其他分支与平台不受影响。
 
 ---
 
 ## 快速开始
 
 ```bash
-make init          # 初始化业务库（建表 + 种子账号 admin/ops/analyst/asset，密码 REDACTED-SSP-PWD）
-make up            # 起全部服务（docker compose）
+make init          # 初始化业务库（建表 + 种子账号 + 登记默认分支 hq/sh-01/bj-01，密码 REDACTED-SSP-PWD）
+make up            # 起全部服务（docker compose，含 Kafka 汇聚层与分支边缘代理）
 make templates     # 下发 ECS/告警索引模板
-make demo          # 回放演示数据（探针 → 事件）
+make demo          # 回放演示数据（总部 + 分支，探针 → 事件）
 make discover      # 触发一次资产测绘（Zeek 连接日志 → 候选池）
-make verify        # 端到端验收（A1~A11 正例 + N1~N7 反例）
+make branch-status # 查看各分支事件量与最新上报时间
+make verify        # 端到端验收（A1~A15 正例 + N1~N11 反例）
 make health        # 查看各服务健康
+```
+
+分支相关（I-13）：
+```bash
+make branch-demo          # 重建各分支边缘代理，重新采集分支数据
+make branch-down B=sh-01  # 模拟某分支断链（→ 该分支 no_data，其他分支不受影响）
+make branch-up   B=sh-01  # 恢复该分支
 ```
 
 访问 <http://localhost:8088>，用 `admin / REDACTED-SSP-PWD` 登录。
@@ -56,13 +69,13 @@ make pg-portal     # 把 portal 切到 PG
 | 目录 | 说明 |
 |---|---|
 | `ui/` | 前端工程（无构建 SPA：`index.html` + `src/`）；`deploy/ui/` 为 nginx 入口 |
-| `services/` | 后端服务：`portal/`（统一业务后端：`portal_server.py` + `db.py` + `assets/soar/users/discovery.py`）、`correlator/`、`soar/`（落黑执行器） |
-| `deploy/` | per-service compose（`deploy/compose.yml` 为唯一入口，`include` 聚合） |
+| `services/` | 后端服务：`portal/`（统一业务后端：`portal_server.py` + `db.py` + `assets/soar/users/discovery/branches.py`）、`correlator/`、`soar/`（落黑执行器） |
+| `deploy/` | per-service compose（`deploy/compose.yml` 为唯一入口，`include` 聚合）；`kafka/` 汇聚层、`branch/` 分支边缘代理 |
 | `config/` | OpenSearch 索引模板、Logstash 管道、Arkime 配置 |
 | `scripts/` | 运维 / 生成 / 校验脚本（见 `scripts/README.md`，经 `make` 调用） |
-| `docs/` | PRD、各迭代（I-01~I-12）技术方案、FAQ、ECS 字段映射 |
+| `docs/` | PRD、各迭代（I-01~I-13）技术方案、FAQ、ECS 字段映射 |
 | `samples/` | 示例资产 xlsx、示例 pcap |
-| `logs/` | `demo/`（演示数据源）；`demo-stage/`、根目录为运行时回放暂存（gitignore） |
+| `logs/` | `demo/`（演示数据源）、`branch-sh/` `branch-bj/`（分支数据源）；`demo-stage/`、根目录为运行时暂存（gitignore） |
 | `data/` | 业务库 SQLite 文件（gitignore） |
 
 ---
@@ -71,7 +84,10 @@ make pg-portal     # 把 portal 切到 PG
 
 - **索引命名**：`ssp-<log_source>-YYYY.MM.dd`；别名 `ssp-ecs`（**严禁通配 `ssp-*`**）。
 - **写权矩阵**（PRD §11，前端 `perms.canWrite` + 后端双重校验）：
-  asset / discovery → admin+asset_admin；soar → admin+ops；users → admin；其余仅 admin。
+  asset / discovery → admin+asset_admin；soar → admin+ops；branches / users → admin；其余仅 admin。
+- **多分支汇聚（I-13）**：分支身份靠 `fields.branch` → `ssp.branch`（**逻辑区分，非物理端口**）；
+  汇聚层是 **Kafka `ssp-raw` 单主题**，新增分支只需加一个边缘代理，中心侧不改端口/管道；
+  `beats :5044` 直连入口保留（旁路/调试/R-15 适配器直投）。
 - **资产测绘（I-12）**：Zeek 连接日志 → 候选池 `asset_candidates` → 人工采纳/忽略 → 合并入 `assets`；
   **自动发现绝不覆盖人工字段**（名称/重要度/责任人/风险分），同 IP 以人工资产为准。
   配置项（授权网段/阈值/窗口/自动采纳）走 `config` 表，经 `/api/discovery/config`（仅 admin 可改）。

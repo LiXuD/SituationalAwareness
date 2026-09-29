@@ -13,8 +13,10 @@ name: ssp-poc
 include:
   - opensearch/compose.yml
   - dashboards/compose.yml
+  - kafka/compose.yml
   - logstash/compose.yml
   - filebeat/compose.yml
+  - branch/compose.yml
   - ui/compose.yml
   - arkime/compose.yml
   - correlator/compose.yml

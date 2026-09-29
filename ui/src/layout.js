@@ -9,6 +9,7 @@ const NAV = [
   ["/traffic", "⇄", "流量回溯"],
   ["/assets", "🖥", "资产库"],
   ["/discovery", "🛰", "资产测绘"],
+  ["/branches", "🌐", "分支汇聚"],
   ["/soar", "🚫", "拉黑审批"],
   ["/users", "👤", "账号管理", "admin"],
 ];
@@ -19,6 +20,7 @@ const TITLES = {
   "/traffic": "流量回溯",
   "/assets": "统一资产库",
   "/discovery": "资产测绘",
+  "/branches": "分支汇聚",
   "/soar": "拉黑审批",
   "/users": "账号管理",
 };
