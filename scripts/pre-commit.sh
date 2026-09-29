@@ -9,7 +9,11 @@
 set -euo pipefail
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# 仓库根：用 git 定位，与钩子被复制到哪里无关（.git/hooks/ 或 scripts/ 均可）
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ]; then
+  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 cd "$ROOT"
 
 # 只对涉及 Python / shell 的改动做检查，无相关改动则直接放行（例如纯文档提交）
