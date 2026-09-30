@@ -12,7 +12,7 @@ PY := python3
 .DEFAULT_GOAL := help
 
 .PHONY: help init env up down ps logs templates demo verify health clean build \
-        pg-up pg-init pg-portal pg-stop lint test gate ci hooks discover discovery-status \
+        pg-up pg-init pg-portal pg-stop lint test gate ci hooks check-env discover discovery-status \
         branch-demo branch-status branch-down branch-up \
         stream-status stream-demo external-up external-down external-demo external-reset
 
@@ -125,18 +125,23 @@ pg-stop: ## 停止 PostgreSQL 容器
 	$(COMPOSE) --profile postgres stop postgres
 
 # ----------------------------- 校验 / 本地门禁（无公网 CI） ----------------------------- #
-lint: ## Python 语法检查（不写字节码缓存，受限环境也可用）
-	$(PY) scripts/lint.py
+lint: ## 语法检查（Python + shell + 前端 JS；不写字节码缓存）
+	@$(PY) scripts/lint.py
+	@for f in scripts/*.sh; do [ -e "$$f" ] || continue; bash -n "$$f" || { echo "  ✘ shell 语法错误：$$f"; exit 1; }; done
+	@bash scripts/lint-ui.sh
 
 test: ## 单元测试（纯标准库 unittest，秒级）
 	$(PY) -m unittest discover -s tests
 
-gate: ## 提交前快速门禁（秒级）：Python/shell 语法 + 单元测试 + 硬编码口令扫描
-	@$(PY) scripts/lint.py
-	@for f in scripts/*.sh; do [ -e "$$f" ] || continue; bash -n "$$f" || { echo "  ✘ shell 语法错误：$$f"; exit 1; }; done
+check-env: ## 校验运行时配置 deploy/.env 与模板是否符合 schema
+	$(PY) scripts/check-env.py
+
+gate: ## 提交前快速门禁（秒级）：lint + 单元测试 + 口令扫描 + 配置模板校验
+	@$(MAKE) lint
 	@$(PY) -m unittest discover -s tests
 	@$(PY) scripts/check-secrets.py
-	@echo "✓ gate 通过（Python 语法 + shell 语法 + 单元测试 + 无硬编码口令）"
+	@$(PY) scripts/check-env.py --example
+	@echo "✓ gate 通过（语法 + 单元测试 + 无硬编码口令 + 配置模板一致）"
 
 ci: ## 本地全量门禁（合并/推送前手动跑）：gate + 端到端验收（约 2 分钟，会重置演示数据）
 	@$(MAKE) gate

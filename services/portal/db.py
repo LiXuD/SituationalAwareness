@@ -23,6 +23,7 @@ db.py —— 平台业务数据库访问层（SQLite 默认，PostgreSQL 预留�
 import os
 import sqlite3
 import threading
+import time
 
 _DSN = os.environ.get("PLATFORM_DB", "sqlite:////data/ssp.db")
 _BACKEND = "postgresql" if _DSN.startswith(("postgres://", "postgresql://")) else "sqlite"
@@ -140,19 +141,22 @@ def run_in_transaction(fn):
 
 
 def init_schema():
-    """建表（幂等）+ 补列迁移（幂等）。"""
+    """建表（幂等）+ 按版本补齐迁移（幂等）。返回本次新应用的迁移 id 列表。"""
     if _BACKEND == "sqlite":
         with _lock:
             c = _get_sqlite()
             c.executescript(SCHEMA_SQL)
             c.commit()
-    else:
-        c = _get_pg()
-        cur = c.cursor()
-        for stmt in [s for s in SCHEMA_SQL.split(";") if s.strip()]:
-            cur.execute(stmt)
-        c.commit()
-    _ensure_columns()
+            applied = _run_migrations(c.cursor())     # 同一连接/锁内执行，避免非可重入锁
+            c.commit()
+        return applied
+    c = _get_pg()
+    cur = c.cursor()
+    for stmt in [s for s in SCHEMA_SQL.split(";") if s.strip()]:
+        cur.execute(stmt)
+    applied = _run_migrations(cur)
+    c.commit()
+    return applied
 
 
 def _table_columns(cur, table):
@@ -173,29 +177,50 @@ def _table_columns(cur, table):
     return out
 
 
-def _ensure_columns():
-    """为既有库补 I-12 新增列（幂等：缺哪列补哪列）。
-
-    注意：本函数自己加锁/开连接，**不可**在持有 _lock 的语句块内调用
-    （threading.Lock 非可重入）。
-    """
-    if _BACKEND == "sqlite":
-        with _lock:
-            c = _get_sqlite()
-            cur = c.cursor()
-            have = _table_columns(cur, "assets")
-            for col, ddl in ASSET_EXTRA_COLUMNS.items():
-                if col not in have:
-                    cur.execute("ALTER TABLE assets ADD COLUMN %s %s" % (col, ddl))
-            c.commit()
-        return
-    c = _get_pg()
-    cur = c.cursor()
+# --------------------------------------------------------------------------- #
+# Schema 迁移框架（版本化）
+#
+# 为什么不再"猜列"：原先 `_ensure_columns()` 硬编码补 assets 单表 4 列，既无法覆盖新表/新列，
+# 也没有"哪些已应用"的记录。改为 MIGRATIONS 有序列表 + `schema_migrations` 记录表：
+#   * **只增不改**：新的 schema 变更追加到 MIGRATIONS 尾部（id 递增）；
+#   * 每项迁移必须**幂等**（缺则补、已有则跳过），以便对"迁移引入前就存在的旧库"安全补跑；
+#   * `init_schema()` 按 id 升序执行未应用项并记录，返回本次新应用的 id 列表。
+# --------------------------------------------------------------------------- #
+def _m001_assets_extra_columns(cur):
+    """I-12：assets 补测绘相关列（缺哪列补哪列，幂等；对新库与旧库均适用）。"""
     have = _table_columns(cur, "assets")
     for col, ddl in ASSET_EXTRA_COLUMNS.items():
         if col not in have:
             cur.execute("ALTER TABLE assets ADD COLUMN %s %s" % (col, ddl))
-    c.commit()
+
+
+MIGRATIONS = [
+    # (id, name, apply_fn) —— id 递增且唯一；**不要修改已发布的迁移**
+    (1, "assets_extra_columns", _m001_assets_extra_columns),
+]
+
+_MIGRATIONS_DDL = (
+    "CREATE TABLE IF NOT EXISTS schema_migrations ("
+    " id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)"
+)
+
+
+def _run_migrations(cur):
+    """按 id 升序执行未应用的迁移；返回本次新应用的 id 列表。"""
+    cur.execute(_MIGRATIONS_DDL)
+    cur.execute("SELECT id FROM schema_migrations")
+    applied = {(r["id"] if isinstance(r, dict) else r[0]) for r in cur.fetchall()}
+    done = []
+    for mid, name, fn in MIGRATIONS:
+        if mid in applied:
+            continue
+        fn(cur)
+        q = qmark()
+        cur.execute(
+            f"INSERT INTO schema_migrations (id, name, applied_at) VALUES ({q},{q},{q})",
+            (mid, name, int(time.time())))
+        done.append(mid)
+    return done
 
 
 def close():
