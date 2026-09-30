@@ -66,7 +66,19 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                     datefmt="%Y-%m-%dT%H:%M:%S")
 
 
-VERSION = "1.0"
+# ── 统一 health 信封（P2-②）：所有服务 /health 返回同一组身份/存活字段 ──
+SERVICE_NAME = "ingest-adapter"
+_START = time.time()
+
+
+def _envelope(status="ok", **extra):
+    d = {"status": status, "service": SERVICE_NAME, "version": VERSION,
+         "uptime_s": round(time.time() - _START, 1)}
+    d.update(extra)
+    return d
+
+
+VERSION = "2026.09"
 ENABLED = str(os.environ.get("ADAPTER_ENABLED", "false")).lower() in ("1", "true", "yes", "on")
 BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092")
 TOPIC = os.environ.get("ADAPTER_TOPIC", "ssp-raw")
@@ -395,11 +407,12 @@ class JsonHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split("?")[0] in ("/health", "/"):
-            self._send(200, {"status": "ok" if ENABLED else "disabled", "enabled": ENABLED,
-                             "version": VERSION, "topic": TOPIC, "bootstrap": BOOTSTRAP,
-                             "ports": {"syslog_udp": UDP_PORT, "cef_tcp": TCP_PORT,
-                                       "json_http": HTTP_PORT},
-                             "stats": STATS})
+            self._send(200, _envelope(
+                status="ok" if ENABLED else "disabled", enabled=ENABLED,
+                topic=TOPIC, bootstrap=BOOTSTRAP,
+                ports={"syslog_udp": UDP_PORT, "cef_tcp": TCP_PORT,
+                       "json_http": HTTP_PORT},
+                stats=STATS))
             return
         self._send(404, {"error": "not found"})
 

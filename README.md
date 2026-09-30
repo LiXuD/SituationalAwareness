@@ -52,16 +52,21 @@ make demo          # 回放演示数据（总部 + 分支，探针 → 事件）
 make discover      # 触发一次资产测绘（Zeek 连接日志 → 候选池）
 make branch-status # 查看各分支事件量与最新上报时间
 make verify        # 端到端验收（A1~A18 正例 + N1~N13 反例，当前 21/21）
-make health        # 查看各服务健康
+make health        # 统一健康巡检：各服务 /health 汇总成一张表（含版本与运行时长）
 ```
+
+可观测性：各服务 `/health` 返回统一信封 `{status, service, version, uptime_s}`（+ 各自专有字段）；
+portal 另提供 Prometheus 文本格式 `/metrics`（`curl :8093/metrics`，含 `ssp_up` / `ssp_db_up` / `ssp_upstream_up` 等）。
 
 提交前验证（本地门禁，无需公网 CI）：
 ```bash
 make hooks         # 一次性：安装 git pre-commit 钩子（提交前自动跑 make gate）
-make gate          # 快速门禁（秒级）：Python/shell 语法 + 硬编码口令扫描
+make gate          # 快速门禁（秒级）：编译+ruff+shell+JS 语法 + 单元测试 + 口令扫描 + 配置模板校验
 make ci            # 全量门禁（约 2 分钟，会重置演示数据）：gate + 端到端验收 —— 合并/推送前手动跑
+make check-env     # 校验 deploy/.env 与模板是否符合 schema
 ```
 `git commit --no-verify` 可临时跳过钩子（应尽量避免）。
+静态检查依赖 **ruff**（dev 侧工具，非交付依赖）：`brew install ruff` 或 `pip install ruff`；未安装时该项自动跳过。
 
 分支相关（I-13）：
 ```bash

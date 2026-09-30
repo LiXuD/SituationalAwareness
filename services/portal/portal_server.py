@@ -61,6 +61,19 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                     datefmt="%Y-%m-%dT%H:%M:%S")
 
 
+# ── 统一 health 信封（P2-②）：所有服务 /health 返回同一组身份/存活字段 ──
+SERVICE_NAME = "portal"
+VERSION = "2026.09"
+_START = time.time()
+
+
+def _envelope(status="ok", **extra):
+    d = {"status": status, "service": SERVICE_NAME, "version": VERSION,
+         "uptime_s": round(time.time() - _START, 1)}
+    d.update(extra)
+    return d
+
+
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
 COOKIE_NAME = os.environ.get("SESSION_COOKIE", "ssp_session")
@@ -291,8 +304,37 @@ class Handler(BaseHTTPRequestHandler):
                 ups["db"] = True
             except Exception:
                 n_users, ups["db"] = 0, False
-            self._json(200, {"status": "ok", "portal_port": PORTAL_PORT,
-                             "backend": db.backend(), "users": n_users, "upstreams": ups})
+            self._json(200, _envelope(
+                portal_port=PORTAL_PORT, backend=db.backend(),
+                users=n_users, upstreams=ups))
+            return
+
+        # ---- 公开：Prometheus 指标（P2-②，供抓取 / 巡检用）----
+        if path == "/metrics" and not write:
+            ups_m = {}
+            for _n, _base in UPSTREAMS.items():
+                _st, _h, _b = _open(_plain, "GET", _base + "/", timeout=3)
+                ups_m[_n] = 1 if 0 < _st < 500 else 0
+            try:
+                _n_users = db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
+                _db_up = 1
+            except Exception:
+                _n_users, _db_up = 0, 0
+            _lines = [
+                "# HELP ssp_up 进程存活（1=up）", "# TYPE ssp_up gauge",
+                f'ssp_up{{service="{SERVICE_NAME}"}} 1',
+                "# HELP ssp_uptime_seconds 进程运行秒数", "# TYPE ssp_uptime_seconds gauge",
+                f'ssp_uptime_seconds{{service="{SERVICE_NAME}"}} {round(time.time() - _START, 1)}',
+                "# HELP ssp_db_up 业务库可用（1=up）", "# TYPE ssp_db_up gauge",
+                f"ssp_db_up {_db_up}",
+                "# HELP ssp_db_users 平台账号数", "# TYPE ssp_db_users gauge",
+                f"ssp_db_users {_n_users}",
+                "# HELP ssp_upstream_up 上游可用（1=up）", "# TYPE ssp_upstream_up gauge",
+            ]
+            for _k, _v in ups_m.items():
+                _lines.append(f'ssp_upstream_up{{upstream="{_k}"}} {_v}')
+            self._send_raw(200, ("\n".join(_lines) + "\n").encode("utf-8"),
+                           ctype="text/plain; version=0.0.4; charset=utf-8")
             return
 
         # ---- 认证 ----

@@ -71,6 +71,19 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                     datefmt="%Y-%m-%dT%H:%M:%S")
 
 
+# ── 统一 health 信封（P2-②）：所有服务 /health 返回同一组身份/存活字段 ──
+SERVICE_NAME = "stream"
+VERSION = "2026.09"
+_START = time.time()
+
+
+def _envelope(status="ok", **extra):
+    d = {"status": status, "service": SERVICE_NAME, "version": VERSION,
+         "uptime_s": round(time.time() - _START, 1)}
+    d.update(extra)
+    return d
+
+
 # ----------------------------- 配置 ----------------------------- #
 BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092")
 TOPIC = os.environ.get("STREAM_TOPIC", "ssp-ecs")
@@ -392,6 +405,7 @@ class Handler(BaseHTTPRequestHandler):
                 lag = st.get("lag") or {}
                 worst = max([v for v in lag.values() if v is not None] or [0])
                 st["ok"] = worst < 1000
+                st.update(_envelope(status=st.get("status") or "ok"))
                 self._send(200, st)
                 return
             if p == "/stats":

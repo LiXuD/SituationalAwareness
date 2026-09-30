@@ -40,6 +40,19 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                     datefmt="%Y-%m-%dT%H:%M:%S")
 
 
+# ── 统一 health 信封（P2-②）：所有服务 /health 返回同一组身份/存活字段 ──
+SERVICE_NAME = "correlator"
+VERSION = "2026.09"
+_START = time.time()
+
+
+def _envelope(status="ok", **extra):
+    d = {"status": status, "service": SERVICE_NAME, "version": VERSION,
+         "uptime_s": round(time.time() - _START, 1)}
+    d.update(extra)
+    return d
+
+
 # 兼容保留：原 correlator 模块级名字（外部脚本/资料库文档引用）
 RULES = K.RULES
 RULE_BY_ID = K.RULE_BY_ID
@@ -116,12 +129,13 @@ class Handler(BaseHTTPRequestHandler):
             _latest, total = K.latest_event_ts()
             ti = K.load_threat_intel()
             ti_status = ti.status() if (ti is not None and hasattr(ti, "status")) else None
-            self._send(200, {"status": "ok", "engine": "batch", "index": K.ALERTS_INDEX,
-                             "events_alias": K.EVENTS_ALIAS, "events_total": total,
-                             "interval_seconds": CORR_INTERVAL,
-                             "allowed_sources": K.allowed_sources(),
-                             "threat_intel": ti is not None,
-                             "threat_intel_status": ti_status})
+            self._send(200, _envelope(
+                engine="batch", index=K.ALERTS_INDEX,
+                events_alias=K.EVENTS_ALIAS, events_total=total,
+                interval_seconds=CORR_INTERVAL,
+                allowed_sources=K.allowed_sources(),
+                threat_intel=ti is not None,
+                threat_intel_status=ti_status))
             return
         if path == "/rules":
             self._send(200, {"rules": K.RULES, "sla_seconds": K.GRADE_SLA_SECONDS})

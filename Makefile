@@ -60,9 +60,9 @@ demo: ## 回放演示数据（探针 → 事件）
 verify: ## 端到端验收（A1~A8 正例 + N1~N4 反例）
 	$(PY) scripts/test-cases.py
 
-health: ## 各服务健康检查
+health: ## 各服务健康检查（含统一巡检表）
+	@$(PY) scripts/health-all.py
 	@bash scripts/verify-ingest.sh || true
-	@curl -sS --noproxy '*' http://localhost:8093/health && echo
 
 clean: ## 清空运行时回放暂存（logs/demo-stage、logs 根）
 	rm -f logs/*/*.json logs/*/*.log 2>/dev/null || true

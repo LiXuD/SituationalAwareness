@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import blocker
@@ -24,6 +25,19 @@ log = logging.getLogger("soar")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(message)s",
                     datefmt="%Y-%m-%dT%H:%M:%S")
+
+
+# ── 统一 health 信封（P2-②）：所有服务 /health 返回同一组身份/存活字段 ──
+SERVICE_NAME = "soar"
+VERSION = "2026.09"
+_START = time.time()
+
+
+def _envelope(status="ok", **extra):
+    d = {"status": status, "service": SERVICE_NAME, "version": VERSION,
+         "uptime_s": round(time.time() - _START, 1)}
+    d.update(extra)
+    return d
 
 
 LISTEN_HOST = "0.0.0.0"
@@ -72,8 +86,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path in ("/health", "/"):
-            self._send(200, {"status": "ok", "backend": "iptables-executor",
-                             "blocker": blocker.status()})
+            self._send(200, _envelope(backend="iptables-executor",
+                                      blocker=blocker.status()))
             return
         if path == "/soar/block/list":
             self._send(200, blocker.list_blocks())
