@@ -2,14 +2,15 @@
 
 > **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 14 份技术方案。
 > **维护**：**每完成一项任务/迭代即更新本文件**（用户明确约定）；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
-> **最后更新**：2026-09-30（P1 全部完成）
+> **最后更新**：2026-09-30（P2 ①② 完成：ruff+PR gate、统一 health/metrics）
 
 ---
 
 ## 0. 一句话
 
 面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-15** 全部迭代并实测
-（`make verify` 21/21）；**工程化改造 P0 与 P1 均已全部完成**，P2（观测/安全加固）待推进。
+（`make verify` 21/21）；**工程化改造 P0/P1 全部完成、P2 完成 2/4**（ruff+本地 PR gate、统一 health/metrics），
+余 P2 安全认证与镜像漏洞扫描待推进。
 
 ---
 
@@ -67,6 +68,9 @@
 
 **端口速查**：前端 8088 ｜ portal 8093 ｜ correlator 8091 ｜ **stream 8094** ｜ soar 8092 ｜ OpenSearch 9200 ｜
 Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5515/tcp、5516/http** ｜ PostgreSQL(宿主) 5433
+
+**统一健康/指标（P2-②）**：各服务 `GET /health` 返回统一信封 `{status, service, version, uptime_s}`（+ 各自专有字段）；
+portal 另提供 Prometheus 文本格式 `GET :8093/metrics`；`make health` 汇总为一张表。
 
 ---
 
@@ -134,7 +138,10 @@ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5
   前端 JS 语法检查（`scripts/lint-ui.sh`，零依赖）；**结构化日志**（各服务 `print` → stdlib `logging`，
   格式 `时间 级别 [服务] 消息`，级别由 `LOG_LEVEL` 控制；CLI/JSON 输出保持 print）。
   单测总数 **19**（kafka_lite 8 + ssp_kernel 8 + db 迁移 3）。
-- **P2（观测/安全）待推进**：Kafka/OpenSearch 安全认证、统一 health/metrics、ruff + PR gate、镜像漏洞扫描。
+- **P2（观测/安全）进行中 2/4**：✅ Python 静态检查 **ruff**（`ruff.toml` 克制规则集 + `scripts/lint-ruff.sh`，
+  未装则跳过）+ `make lint/gate/ci` 即**本地 PR gate**；✅ **统一 health/metrics**（各服务 `/health` 统一信封
+  `status/service/version/uptime_s`；portal 增 Prometheus 文本 `/metrics`；`make health` 汇总成一张表）。
+  ⏳ 待做：**安全认证**（Kafka SASL / OpenSearch security）、**镜像漏洞扫描**（trivy/grype）。
 - **总原则**：保持「纯标准库 + 少量 dev 侧工具」定位，不引 k8s/Flink/重量观测栈；每项改动必须经 `make verify` 实测。
 
 ---
@@ -179,11 +186,13 @@ make build       # 构建自建镜像（portal/soar，钉版 tag）
 make templates   # 下发 ECS/告警索引模板
 make demo        # 回放演示数据（总部 + 分支）
 make verify      # 端到端验收（当前 21/21）
-make gate        # 提交前快速门禁（语法 + 单元测试 + 口令扫描 + 配置模板一致）
+make lint        # 语法+静态检查（Python 编译 + ruff + shell + 前端 JS）
+make gate        # 提交前快速门禁（lint + 单元测试 + 口令扫描 + 配置模板一致）—— 本地 PR gate
 make ci          # 全量门禁（gate + verify，合并/推送前）
 make test        # 单元测试（tests/，纯标准库 unittest）
 make check-env   # 校验 deploy/.env 与模板是否符合 schema
 make hooks       # 安装 git pre-commit 钩子
+make health      # 统一健康巡检（各服务 /health 汇总表）
 make health      # 各服务健康
 make branch-status            # 查看各分支上报状态
 make branch-down B=sh-01      # 模拟某分支断链
