@@ -2,14 +2,15 @@
 
 > **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 14 份技术方案。
 > **维护**：**每完成一项任务/迭代即更新本文件**（用户明确约定）；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
-> **最后更新**：2026-09-29（P0 工程化完成）
+> **最后更新**：2026-09-30（P1 三项完成）
 
 ---
 
 ## 0. 一句话
 
 面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-15** 全部迭代并实测
-（`make verify` 21/21）；**工程化改造 P0 已落地**（本地门禁 / 镜像钉版 / 单元测试 / 静默异常告警），P1/P2 待推进。
+（`make verify` 21/21）；**工程化改造 P0 已全部完成、P1 完成 3/4**（DB 版本化迁移 / 配置 schema 校验 / 前端 JS 语法检查），
+余 P1「结构化日志」与 P2 待推进。
 
 ---
 
@@ -129,7 +130,10 @@ Arkime 8005 ｜ Kafka 9092 ｜ Logstash(beats) 5044 ｜ **外部源 5514/udp、5
   `scripts/check-secrets.py` 硬编码口令扫描）；② 自建镜像钉版（`ssp-*:${SSP_IMAGE_TAG:-2026.09}` + `make build`）；
   ③ 单元测试 16 项（`tests/`，纯 stdlib unittest，覆盖 kafka_lite 编解码 + ssp_kernel 核心）；④ 3 处关键静默异常改为告警。
   —— 全量 `make verify` **21/21** 通过，提交 `e04cd62`。
-- **P1（可维护性）待推进**：结构化日志（替换 print）、DB 迁移框架、配置 schema 校验、前端 lint。
+- **P1（可维护性）进行中**：✅ DB 版本化迁移（`MIGRATIONS` + `schema_migrations`，替代"猜列"）；
+  ✅ 配置 schema 校验（`scripts/check-env.py` + `make check-env`，模板一致性入 gate）；
+  ✅ 前端 JS 语法检查（`scripts/lint-ui.sh`，零依赖）；⏳ **待做：结构化日志**（替换各服务 `print`，统一格式/级别）。
+  单测总数 **19**（kafka_lite 8 + ssp_kernel 8 + db 迁移 3）。
 - **P2（观测/安全）待推进**：Kafka/OpenSearch 安全认证、统一 health/metrics、ruff + PR gate、镜像漏洞扫描。
 - **总原则**：保持「纯标准库 + 少量 dev 侧工具」定位，不引 k8s/Flink/重量观测栈；每项改动必须经 `make verify` 实测。
 
@@ -175,9 +179,10 @@ make build       # 构建自建镜像（portal/soar，钉版 tag）
 make templates   # 下发 ECS/告警索引模板
 make demo        # 回放演示数据（总部 + 分支）
 make verify      # 端到端验收（当前 21/21）
-make gate        # 提交前快速门禁（语法 + 单元测试 + 口令扫描）
+make gate        # 提交前快速门禁（语法 + 单元测试 + 口令扫描 + 配置模板一致）
 make ci          # 全量门禁（gate + verify，合并/推送前）
 make test        # 单元测试（tests/，纯标准库 unittest）
+make check-env   # 校验 deploy/.env 与模板是否符合 schema
 make hooks       # 安装 git pre-commit 钩子
 make health      # 各服务健康
 make branch-status            # 查看各分支上报状态
