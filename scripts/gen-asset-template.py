@@ -14,14 +14,14 @@ I-06 开发期脚本（仅本地运行，用托管 venv 的 openpyxl 执行，
   export PATH=/usr/local/bin:$PATH
   /Users/lixd/.workbuddy/binaries/python/envs/default/bin/python scripts/gen-asset-template.py
 """
+import argparse
 import os
 import sys
-import argparse
 
 try:
     import openpyxl
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Alignment, Font, PatternFill
 except ImportError:
     sys.stderr.write("需要 openpyxl（请用托管 venv 执行：~/.workbuddy/binaries/python/envs/default/bin/python）\n")
     sys.exit(2)

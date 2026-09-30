@@ -32,8 +32,8 @@ import ssl
 import sys
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -206,8 +206,6 @@ def main():
 
     # 2) 并发拉取
     t0 = time.time()
-    threads = []
-    tasks = []
     workers = max(1, args.workers)
     # 简单轮转分配：先补齐未完成的段
     idxs = []

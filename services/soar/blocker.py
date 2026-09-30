@@ -16,11 +16,10 @@ I-05 落黑执行适配器 —— 本机 iptables（纯标准库）
 - 入参 IP 必须先通过 `ipaddress` 校验，非法直接拒绝（防命令注入/误封）。
 - 链为空时跳转为 no-op，不影响平台自身网络。
 """
+import ipaddress
 import os
 import re
-import shlex
 import subprocess
-import ipaddress
 
 CHAIN = os.environ.get("SSP_CHAIN", "SSP_BLACKLIST")
 HOOK_CHAIN = os.environ.get("SSP_HOOK_CHAIN", "DOCKER-USER")  # 挂载点；置空则不挂

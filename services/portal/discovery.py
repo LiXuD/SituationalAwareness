@@ -29,6 +29,7 @@ discovery.py —— 资产测绘（被动识别）引擎 + 候选池（I-12）�
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -36,7 +37,6 @@ import urllib.request
 
 import assets
 import db
-import logging
 
 log = logging.getLogger("portal.discovery")
 

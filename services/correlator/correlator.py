@@ -30,8 +30,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.environ.get("COMMON_DIR", "/srv-common"))
-import ssp_kernel as K                                        # noqa: E402
 import logging
+
+import ssp_kernel as K  # noqa: E402
 
 log = logging.getLogger("correlator")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),

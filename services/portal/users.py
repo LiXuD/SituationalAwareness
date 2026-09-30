@@ -9,7 +9,6 @@ users.py —— 账号管理业务逻辑（落平台业务库 users 表）。
   * 不允许删除或停用/降级「最后一个可用的 admin」（避免平台失去管理入口）。
 """
 import hashlib
-import json
 import re
 import secrets
 import time
@@ -106,15 +105,18 @@ def update_user(username, body):
         return 409, {"ok": False, "error": "不能降级/停用最后一个管理员"}
 
     if "display" in body:
-        sets.append("display=?"); params.append(str(body["display"] or "").strip() or username)
+        sets.append("display=?")
+        params.append(str(body["display"] or "").strip() or username)
     if new_role:
         if new_role not in ROLES:
             return 422, {"ok": False, "error": "角色非法"}
-        sets.append("role=?"); params.append(new_role)
+        sets.append("role=?")
+        params.append(new_role)
     if new_status:
         if new_status not in ("active", "disabled"):
             return 422, {"ok": False, "error": "状态非法"}
-        sets.append("status=?"); params.append(new_status)
+        sets.append("status=?")
+        params.append(new_status)
     if body.get("password"):
         if len(body["password"]) < 6:
             return 422, {"ok": False, "error": "密码至少 6 位"}
@@ -123,7 +125,8 @@ def update_user(username, body):
         params += [salt, h, it]
     if not sets:
         return 200, {"ok": True, "user": get_user(username)}
-    sets.append("updated_at=?"); params.append(_now())
+    sets.append("updated_at=?")
+    params.append(_now())
     params.append(username)
     db.execute("UPDATE users SET " + ", ".join(sets) + " WHERE username=?", params)
     # 角色变更/停用/改密后，使该用户的既有会话失效（安全）

@@ -11,14 +11,14 @@ portal 通过以下纯执行接口调用：
     GET  /soar/block/list                     当前 iptables 规则
     GET  /health
 """
-import json
 import ipaddress
+import json
+import logging
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import blocker
-import logging
 
 log = logging.getLogger("soar")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),

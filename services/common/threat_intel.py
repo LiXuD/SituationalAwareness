@@ -21,12 +21,12 @@ I-04 MISP 威胁情报对接 —— 轻量适配器 + 本地种子情报（纯�
   "indicator": <首个 indicator>
 }
 """
-import os
-import json
-import time
 import ipaddress
-import urllib.request
+import json
+import os
+import time
 import urllib.error
+import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MISP_URL = (os.environ.get("MISP_URL") or "").rstrip("/")

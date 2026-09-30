@@ -40,6 +40,7 @@ import hashlib
 import hmac
 import http.cookies
 import json
+import logging
 import os
 import secrets
 import sys
@@ -49,11 +50,10 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import db
 import assets
+import db
 import soar
 import users
-import logging
 
 log = logging.getLogger("portal")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -692,6 +692,7 @@ def _start_discovery_timer():
         log.info("[portal] 资产测绘定时任务：已关闭（DISCOVERY_INTERVAL_SECONDS=0）")
         return
     import threading
+
     import discovery
 
     def loop():
@@ -718,6 +719,7 @@ def _start_branch_timer():
         log.info("[portal] 分支汇聚健康探测：已关闭（BRANCH_HEALTH_INTERVAL_SECONDS=0）")
         return
     import threading
+
     import branches
 
     def loop():

@@ -19,8 +19,8 @@ import json
 import re
 import time
 import uuid
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from io import BytesIO
 
 import db
@@ -250,7 +250,6 @@ def do_list(q="", importance="", page=1, size=20):
         params.append(importance)
     wh = ("WHERE " + " AND ".join(where)) if where else ""
     total = db.query_one("SELECT COUNT(*) AS n FROM assets " + wh, params)["n"]
-    ph = db.qmark()
     rows = db.query(
         f"SELECT * FROM assets {wh} ORDER BY updated_at DESC LIMIT {size} OFFSET {(page - 1) * size}",
         params)
@@ -313,21 +312,27 @@ def do_update(aid, body):
             sets.append(f + "=?")
             params.append(str(body[f]).strip() if body[f] is not None else "")
     if "ip" in body:
-        sets.append("ip=?"); params.append(str(body["ip"]).strip())
+        sets.append("ip=?")
+        params.append(str(body["ip"]).strip())
     if "importance" in body:
         imp = str(body["importance"]).strip()
-        sets.append("importance=?"); params.append(imp)
-        sets.append("importance_score=?"); params.append(IMPORTANCE_MAP[imp])
+        sets.append("importance=?")
+        params.append(imp)
+        sets.append("importance_score=?")
+        params.append(IMPORTANCE_MAP[imp])
     if "risk_score" in body:
-        sets.append("risk_score=?"); params.append(int(body["risk_score"]))
+        sets.append("risk_score=?")
+        params.append(int(body["risk_score"]))
     if "tags" in body:
         tags = body["tags"]
         if isinstance(tags, str):
             tags = [t.strip() for t in tags.split(",") if t.strip()]
-        sets.append("tags=?"); params.append(json.dumps(tags, ensure_ascii=False))
+        sets.append("tags=?")
+        params.append(json.dumps(tags, ensure_ascii=False))
     if not sets:
         return 200, {"ok": True, "asset_id": aid, "updated": {}}
-    sets.append("updated_at=?"); params.append(_now())
+    sets.append("updated_at=?")
+    params.append(_now())
     params.append(aid)
     db.execute("UPDATE assets SET " + ", ".join(sets) + " WHERE asset_id=?", params)
     row = db.query_one("SELECT * FROM assets WHERE asset_id=?", (aid,))

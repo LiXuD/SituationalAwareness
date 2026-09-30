@@ -19,9 +19,9 @@
 
 用法：  python3 scripts/gen-demo-data.py
 """
+import datetime
 import json
 import os
-import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "logs", "demo")

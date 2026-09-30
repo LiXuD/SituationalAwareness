@@ -28,8 +28,8 @@ sys.path.insert(0, os.path.join(ROOT, "services", "portal"))
 _DEFAULT_DB = "sqlite:///" + os.path.join(ROOT, "data", "ssp.db")
 os.environ.setdefault("PLATFORM_DB", _DEFAULT_DB)
 
-import db  # noqa: E402
 import _env  # noqa: E402
+import db  # noqa: E402
 
 ITER = 200_000
 DEFAULT_USERS = [

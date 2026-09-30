@@ -42,7 +42,6 @@ I-14 流式关联与外部日志源适配（本脚本追加，正例 A16~A18 + �
 退出码：0=全部通过；1=有失败项。
 """
 import argparse
-from http.cookiejar import CookieJar
 import datetime
 import hashlib
 import json
@@ -58,6 +57,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from http.cookiejar import CookieJar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _env  # noqa: E402   （加载 deploy/.env；仓库内不保存口令）
@@ -713,7 +713,6 @@ def case_a15_branch_isolation():
     tok = portal_login("admin")
     if not tok:
         return rec("A15", "分支独立", False, "登录失败")
-    h = {"Cookie": f"ssp_session={tok}"}
     b0 = branch_agg()
     if "bj-01" not in b0:
         return rec("A15", "分支独立", False, f"前置不满足：无 bj-01 事件 {b0}")
@@ -1059,7 +1058,6 @@ def case_a18_external_source():
         return rec("A18", "外部源适配", False, "适配器未能在 60s 内就绪（make external-up 失败）")
     cleanup_external()                                   # 从零开始，便于断言增量
     del_alerts({"term": {"related.entities.external_ips": ip}})
-    n0 = es_count("ssp-events")
     # ① syslog(UDP)：防火墙 deny（ASA 风格，含同一外部 IP）
     udp_send(SYSLOG_UDP_PORT, [
         f'<134>Oct 11 22:14:15 fw-edge-01 %ASA-4-106023: Deny tcp src outside:{ip}/41000 '
@@ -1133,7 +1131,6 @@ def case_n12_stream_interrupt():
     s0 = stream_stats()
     if s0.get("engine") != "stream":
         return rec("N12", "消费者中断", False, f"流式引擎不可用：{s0 or '无响应'}")
-    before = s0.get("consumed_total", 0)
     committed0 = sum((s0.get("positions") or {}).values())
     total_before = alerts_total()
     corr_ok = http("GET", f"{CORR}/health")[0] == 200

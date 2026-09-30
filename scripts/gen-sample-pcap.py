@@ -13,8 +13,8 @@
 
 输出：samples/pcap/sample.pcap（classic pcap，little-endian，Ethernet 链路层）。
 """
-import struct
 import socket
+import struct
 import sys
 
 OUT = "samples/pcap/sample.pcap"

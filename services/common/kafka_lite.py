@@ -45,12 +45,12 @@ I-14 流式关联：POC 采用"轻量消费者"路线（计划 §六 D1 选项 C
 """
 import gzip
 import json
+import logging
 import os
 import socket
 import struct
 import threading
 import time
-import logging
 
 _LOG = logging.getLogger(__name__)
 
@@ -299,7 +299,7 @@ def _decompress(codec, data):
         return gzip.decompress(data)
     try:
         if codec == "lz4":
-            import lz4.frame as lz4f          # 可选（存在则用）
+            import lz4.frame as lz4f  # 可选（存在则用）
             return lz4f.decompress(data)
         if codec == "zstd":
             import zstandard

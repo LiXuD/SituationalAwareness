@@ -56,8 +56,9 @@ for _d in (os.environ.get("COMMON_DIR", "/srv-common"),
            _HERE):
     if _d and os.path.isdir(_d) and _d not in sys.path:
         sys.path.insert(0, _d)
-from kafka_lite import KafkaProducer, KafkaError          # noqa: E402
 import logging
+
+from kafka_lite import KafkaError, KafkaProducer  # noqa: E402
 
 log = logging.getLogger("adapter")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),

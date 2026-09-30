@@ -125,8 +125,9 @@ pg-stop: ## 停止 PostgreSQL 容器
 	$(COMPOSE) --profile postgres stop postgres
 
 # ----------------------------- 校验 / 本地门禁（无公网 CI） ----------------------------- #
-lint: ## 语法检查（Python + shell + 前端 JS；不写字节码缓存）
+lint: ## 语法 + 静态检查（Python: ruff+编译 / shell / 前端 JS）
 	@$(PY) scripts/lint.py
+	@bash scripts/lint-ruff.sh
 	@for f in scripts/*.sh; do [ -e "$$f" ] || continue; bash -n "$$f" || { echo "  ✘ shell 语法错误：$$f"; exit 1; }; done
 	@bash scripts/lint-ui.sh
 

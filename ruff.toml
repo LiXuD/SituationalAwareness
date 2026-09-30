@@ -1,0 +1,27 @@
+# ruff 配置（dev 侧质量门禁；**不进交付物**）
+#
+# 定位：只做"能确定是问题"的检查，不引入风格争议。规则集显式声明，
+# 不随 ruff 版本的默认集漂移（0.16 起默认集会含 BLE001/UP031 等大量改造型规则，
+# 对一个已运行稳定的 POC 会造成数百条噪音）。
+#
+# 安装：brew install ruff  或  pip install ruff
+# 运行：make lint（ruff 存在才跑；不存在则跳过并在 CI/gate 中给出提示）
+
+line-length = 120
+target-version = "py39"
+
+exclude = [".git", "data", "logs", "node_modules", "__pycache__", "ui/assets"]
+
+[lint]
+# pycodestyle 错误子集 + pyflakes（未定义名/未用导入变量，价值最高）+ isort（导入顺序）
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = [
+    "E402",  # 模块级 import 不在文件顶部：各服务需先 sys.path.insert 再 import 共享内核
+    "E501",  # 行宽：本仓库含大量中文长行（注释/日志），不强求
+]
+
+[lint.per-file-ignores]
+# 测试脚本常用"调用只为副作用"的变量与宽松写法
+"tests/*" = ["F841", "F401"]
+# 演示/冒烟脚本内含大量内联示例
+"scripts/*" = ["F401"]

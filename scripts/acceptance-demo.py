@@ -25,13 +25,13 @@ import argparse
 import json
 import os
 import re
-from http.cookiejar import CookieJar
-import ssl
 import sqlite3
+import ssl
 import subprocess
 import sys
 import time
 import urllib.request
+from http.cookiejar import CookieJar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _env  # noqa: E402   （加载 deploy/.env；仓库内不保存口令）
@@ -318,8 +318,8 @@ def step_a7_approve_block():
     if al.get("generated_at") and al.get("resolved_at"):
         try:
             from datetime import datetime
-            f = lambda s: datetime.fromisoformat(s.replace("Z", "+00:00"))
-            loop_lat = (f(al["resolved_at"]) - f(al["generated_at"])).total_seconds()
+            loop_lat = (datetime.fromisoformat(al["resolved_at"].replace("Z", "+00:00"))
+                        - datetime.fromisoformat(al["generated_at"].replace("Z", "+00:00"))).total_seconds()
         except Exception:
             pass
     ok = (ip in blocked_ips) and status == "blocked"

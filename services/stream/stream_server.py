@@ -60,9 +60,10 @@ for _d in (os.environ.get("COMMON_DIR", "/srv-common"),
            _HERE):
     if _d and os.path.isdir(_d) and _d not in sys.path:
         sys.path.insert(0, _d)
-import ssp_kernel as K                                        # noqa: E402
-from kafka_lite import KafkaConsumer, FileOffsetStore, KafkaError   # noqa: E402
 import logging
+
+import ssp_kernel as K  # noqa: E402
+from kafka_lite import FileOffsetStore, KafkaConsumer, KafkaError  # noqa: E402
 
 log = logging.getLogger("stream")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
