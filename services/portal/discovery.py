@@ -36,6 +36,10 @@ import urllib.request
 
 import assets
 import db
+import logging
+
+log = logging.getLogger("portal.discovery")
+
 
 OPENSEARCH_URL = os.environ.get("OPENSEARCH_URL", "http://opensearch:9200").rstrip("/")
 ZEEK_INDEX = os.environ.get("DISCOVERY_ZEEK_INDEX", "ssp-zeek-*")
@@ -118,7 +122,7 @@ def get_config():
             out[r["key"]] = r["value"]
     except Exception as e:
         # 配置读取失败（通常 DB 异常）时不能静默——否则测绘会悄悄用默认配置跑
-        print(f"[discovery] 读取配置失败，回退默认: {type(e).__name__}: {e}", flush=True)
+        log.warning(f"[discovery] 读取配置失败，回退默认: {type(e).__name__}: {e}")
     return out
 
 

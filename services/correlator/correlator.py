@@ -31,6 +31,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.environ.get("COMMON_DIR", "/srv-common"))
 import ssp_kernel as K                                        # noqa: E402
+import logging
+
+log = logging.getLogger("correlator")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                    format="%(asctime)s %(levelname)s %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S")
+
 
 # 兼容保留：原 correlator 模块级名字（外部脚本/资料库文档引用）
 RULES = K.RULES
@@ -158,10 +165,10 @@ def start_loop():
             time.sleep(CORR_INTERVAL)
             try:
                 r = K.run_correlation()
-                print(f"[correlator] 周期关联: 事件={r.get('events_scanned')} "
-                      f"告警={r.get('alerts_total')} 写入={r.get('write')}", flush=True)
+                log.info(f"[correlator] 周期关联: 事件={r.get('events_scanned')} "
+                      f"告警={r.get('alerts_total')} 写入={r.get('write')}")
             except Exception as e:
-                print(f"[correlator] 周期关联异常: {e}", flush=True)
+                log.warning(f"[correlator] 周期关联异常: {e}")
     t = threading.Thread(target=_loop, daemon=True)
     t.start()
 
@@ -174,8 +181,8 @@ def main():
     if CORR_INTERVAL > 0:
         start_loop()
     srv = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
-    print(f"[correlator] 批式关联引擎启动 http://{LISTEN_HOST}:{LISTEN_PORT} "
-          f"窗口={K.WINDOW_MINUTES}min 周期={CORR_INTERVAL}s", flush=True)
+    log.info(f"[correlator] 批式关联引擎启动 http://{LISTEN_HOST}:{LISTEN_PORT} "
+          f"窗口={K.WINDOW_MINUTES}min 周期={CORR_INTERVAL}s")
     srv.serve_forever()
 
 

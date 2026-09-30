@@ -53,6 +53,13 @@ import db
 import assets
 import soar
 import users
+import logging
+
+log = logging.getLogger("portal")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                    format="%(asctime)s %(levelname)s %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S")
+
 
 PORTAL_PORT = int(os.environ.get("PORTAL_PORT", "8093"))
 SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
@@ -236,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
                  self.client_address[0], _now()))
         except Exception as e:
             # 审计日志是安全相关记录：写入失败不能静默，至少留痕
-            print(f"[portal] 审计日志写入失败: {type(e).__name__}: {e}", flush=True)
+            log.warning(f"[portal] 审计日志写入失败: {type(e).__name__}: {e}")
 
     # ---------------- 路由 ----------------
     def do_OPTIONS(self):
@@ -682,7 +689,7 @@ def _start_discovery_timer():
     except ValueError:
         interval = 3600
     if interval <= 0:
-        print("[portal] 资产测绘定时任务：已关闭（DISCOVERY_INTERVAL_SECONDS=0）", flush=True)
+        log.info("[portal] 资产测绘定时任务：已关闭（DISCOVERY_INTERVAL_SECONDS=0）")
         return
     import threading
     import discovery
@@ -692,13 +699,13 @@ def _start_discovery_timer():
             time.sleep(interval)
             try:
                 st, obj = discovery.run()
-                print(f"[portal] 资产测绘定时执行：HTTP {st} 主机 {obj.get('scanned_hosts')} "
-                      f"新增 {obj.get('created')} 刷新 {obj.get('updated')}", flush=True)
+                log.info(f"[portal] 资产测绘定时执行：HTTP {st} 主机 {obj.get('scanned_hosts')} "
+                      f"新增 {obj.get('created')} 刷新 {obj.get('updated')}")
             except Exception as e:
-                print(f"[portal] 资产测绘定时执行失败：{type(e).__name__}: {e}", flush=True)
+                log.warning(f"[portal] 资产测绘定时执行失败：{type(e).__name__}: {e}")
 
     threading.Thread(target=loop, name="discovery", daemon=True).start()
-    print(f"[portal] 资产测绘定时任务已启动：每 {interval}s", flush=True)
+    log.info(f"[portal] 资产测绘定时任务已启动：每 {interval}s")
 
 
 def _start_branch_timer():
@@ -708,7 +715,7 @@ def _start_branch_timer():
     except ValueError:
         interval = 300
     if interval <= 0:
-        print("[portal] 分支汇聚健康探测：已关闭（BRANCH_HEALTH_INTERVAL_SECONDS=0）", flush=True)
+        log.info("[portal] 分支汇聚健康探测：已关闭（BRANCH_HEALTH_INTERVAL_SECONDS=0）")
         return
     import threading
     import branches
@@ -720,15 +727,15 @@ def _start_branch_timer():
                 st, obj = branches.probe()
                 if st == 200:
                     sc = obj.get("state_counts") or {}
-                    print(f"[portal] 分支汇聚探测：在线 {sc.get('ok', 0)} / 离线 "
-                          f"{sc.get('no_data', 0)} / 未登记 {len(obj.get('unregistered') or [])}", flush=True)
+                    log.info(f"[portal] 分支汇聚探测：在线 {sc.get('ok', 0)} / 离线 "
+                          f"{sc.get('no_data', 0)} / 未登记 {len(obj.get('unregistered') or [])}")
                 else:
-                    print(f"[portal] 分支汇聚探测失败：HTTP {st} {obj.get('error')}", flush=True)
+                    log.warning(f"[portal] 分支汇聚探测失败：HTTP {st} {obj.get('error')}")
             except Exception as e:
-                print(f"[portal] 分支汇聚探测异常：{type(e).__name__}: {e}", flush=True)
+                log.warning(f"[portal] 分支汇聚探测异常：{type(e).__name__}: {e}")
 
     threading.Thread(target=loop, name="branch-health", daemon=True).start()
-    print(f"[portal] 分支汇聚健康探测已启动：每 {interval}s", flush=True)
+    log.info(f"[portal] 分支汇聚健康探测已启动：每 {interval}s")
 
 
 def main():
@@ -737,13 +744,13 @@ def main():
     except Exception:
         n = 0
     if not n:
-        print("[portal] ⚠️ users 表为空——请先运行 scripts/init-db.py", flush=True)
+        log.warning("[portal] ⚠️ users 表为空——请先运行 scripts/init-db.py")
     srv = ThreadingHTTPServer(("0.0.0.0", PORTAL_PORT), Handler)
-    print(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}", flush=True)
-    print(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}", flush=True)
+    log.info(f"[portal] 平台统一后端 v4 启动 http://0.0.0.0:{PORTAL_PORT}  账号 {n} 个  业务库={db.backend()}")
+    log.info(f"[portal] 上游：{UPSTREAMS}  arkime={ARKIME_URL}")
     if not ARKIME_PASS:
-        print("[portal] ⚠️ 未提供 ARKIME_PASS —— 流量回溯（/api/traffic/*）会因 Arkime 鉴权失败返回 401。"
-              "请在 deploy/.env 配置 ARKIME_ADMIN_PASSWORD 后重启 portal（可先执行 make init）。", flush=True)
+        log.warning("[portal] ⚠️ 未提供 ARKIME_PASS —— 流量回溯（/api/traffic/*）会因 Arkime 鉴权失败返回 401。"
+              "请在 deploy/.env 配置 ARKIME_ADMIN_PASSWORD 后重启 portal（可先执行 make init）。")
     _start_discovery_timer()
     _start_branch_timer()
     srv.serve_forever()

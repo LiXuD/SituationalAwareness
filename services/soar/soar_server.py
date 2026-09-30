@@ -18,6 +18,13 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import blocker
+import logging
+
+log = logging.getLogger("soar")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                    format="%(asctime)s %(levelname)s %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S")
+
 
 LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8092"))
@@ -103,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     srv = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
-    print(f"[soar] 落黑执行器启动 http://{LISTEN_HOST}:{LISTEN_PORT} blocker={blocker.MODE}", flush=True)
+    log.info(f"[soar] 落黑执行器启动 http://{LISTEN_HOST}:{LISTEN_PORT} blocker={blocker.MODE}")
     srv.serve_forever()
 
 

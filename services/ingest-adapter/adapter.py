@@ -57,6 +57,13 @@ for _d in (os.environ.get("COMMON_DIR", "/srv-common"),
     if _d and os.path.isdir(_d) and _d not in sys.path:
         sys.path.insert(0, _d)
 from kafka_lite import KafkaProducer, KafkaError          # noqa: E402
+import logging
+
+log = logging.getLogger("adapter")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                    format="%(asctime)s %(levelname)s %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S")
+
 
 VERSION = "1.0"
 ENABLED = str(os.environ.get("ADAPTER_ENABLED", "false")).lower() in ("1", "true", "yes", "on")
@@ -312,7 +319,7 @@ def serve_syslog_udp():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", UDP_PORT))
-    print(f"[adapter] syslog/UDP 监听 :{UDP_PORT} → Kafka {TOPIC}", flush=True)
+    log.info(f"[adapter] syslog/UDP 监听 :{UDP_PORT} → Kafka {TOPIC}")
     while True:
         data, addr = s.recvfrom(65535)
         text = data.decode("utf-8", "replace").strip()
@@ -333,7 +340,7 @@ def serve_cef_tcp():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", TCP_PORT))
     srv.listen(16)
-    print(f"[adapter] CEF/TCP 监听 :{TCP_PORT} → Kafka {TOPIC}", flush=True)
+    log.info(f"[adapter] CEF/TCP 监听 :{TCP_PORT} → Kafka {TOPIC}")
 
     def handle(conn, addr):
         buf = b""
@@ -429,8 +436,8 @@ class JsonHandler(BaseHTTPRequestHandler):
 
 def serve_json_http():
     srv = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), JsonHandler)
-    print(f"[adapter] JSON/HTTP 监听 :{HTTP_PORT}（POST /ingest/json?source=&branch=）"
-          f" → Kafka {TOPIC}", flush=True)
+    log.info(f"[adapter] JSON/HTTP 监听 :{HTTP_PORT}（POST /ingest/json?source=&branch=）"
+          f" → Kafka {TOPIC}")
     srv.serve_forever()
 
 
@@ -470,9 +477,8 @@ def main():
     if "--check" in sys.argv:
         return check()
     if not ENABLED:
-        print("[adapter] 外部源适配器**已关闭**（ADAPTER_ENABLED=false）——"
-              "不监听端口、不投递任何事件。开启：ADAPTER_ENABLED=true（或 make external-up）",
-              flush=True)
+        log.info("[adapter] 外部源适配器**已关闭**（ADAPTER_ENABLED=false）——"
+                 "不监听端口、不投递任何事件。开启：ADAPTER_ENABLED=true（或 make external-up）")
         return 0
     STATS["started_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     threads = [
@@ -482,8 +488,8 @@ def main():
     ]
     for t in threads:
         t.start()
-    print(f"[adapter] 外部源适配器已启动（v{VERSION}）：全部事件投递到 Kafka {TOPIC}，"
-          f"归一由 Logstash 完成", flush=True)
+    log.info(f"[adapter] 外部源适配器已启动（v{VERSION}）：全部事件投递到 Kafka {TOPIC}，"
+          f"归一由 Logstash 完成")
     while True:
         time.sleep(3600)
 

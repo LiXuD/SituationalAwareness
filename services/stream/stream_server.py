@@ -62,6 +62,13 @@ for _d in (os.environ.get("COMMON_DIR", "/srv-common"),
         sys.path.insert(0, _d)
 import ssp_kernel as K                                        # noqa: E402
 from kafka_lite import KafkaConsumer, FileOffsetStore, KafkaError   # noqa: E402
+import logging
+
+log = logging.getLogger("stream")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                    format="%(asctime)s %(levelname)s %(message)s",
+                    datefmt="%Y-%m-%dT%H:%M:%S")
+
 
 # ----------------------------- 配置 ----------------------------- #
 BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092")
@@ -234,8 +241,8 @@ class StreamRunner:
                                       client_id=f"ssp-{GROUP}")
         self.consumer.start()
         self.stats.bootstrap_mode = self.consumer.bootstrap_mode
-        print(f"[stream] 已订阅 {TOPIC}（group={GROUP} 位点={path} "
-              f"启动模式={self.consumer.bootstrap_mode} 分区={self.consumer.assigned}）", flush=True)
+        log.info(f"[stream] 已订阅 {TOPIC}（group={GROUP} 位点={path} "
+              f"启动模式={self.consumer.bootstrap_mode} 分区={self.consumer.assigned}）")
 
     def reconnect(self):
         self.stats.reconnects += 1
@@ -253,7 +260,7 @@ class StreamRunner:
             recs, errs = self.consumer.next_batch(timeout_ms=FETCH_WAIT_MS)
         except KafkaError as e:
             self.stats.last_error = f"fetch: {e}"
-            print(f"[stream] fetch 异常，重连：{e}", flush=True)
+            log.warning(f"[stream] fetch 异常，重连：{e}")
             self.reconnect()
             return 0
         for e in errs:
@@ -318,8 +325,8 @@ class StreamRunner:
         self.dirty = False
         self._last_eval_ms = now
         if alerts:
-            print(f"[stream] 评估: 窗口事件={len(docs)} 命中={hits} 告警={len(alerts)} "
-                  f"写入={res} 时延(ms)={self.stats.last_latency_ms}", flush=True)
+            log.info(f"[stream] 评估: 窗口事件={len(docs)} 命中={hits} 告警={len(alerts)} "
+                  f"写入={res} 时延(ms)={self.stats.last_latency_ms}")
 
     def maybe_commit(self, force=False):
         now = int(time.time() * 1000)
@@ -436,9 +443,9 @@ def main():
     t = threading.Thread(target=RUNNER.run, name="stream-consumer", daemon=True)
     t.start()
     srv = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
-    print(f"[stream] 流式关联引擎启动 http://{LISTEN_HOST}:{LISTEN_PORT} "
+    log.info(f"[stream] 流式关联引擎启动 http://{LISTEN_HOST}:{LISTEN_PORT} "
           f"topic={TOPIC} group={GROUP} 窗口={WINDOW_SECONDS}s "
-          f"评估节流={EVAL_INTERVAL_MS}ms 来源={K.allowed_sources()}", flush=True)
+          f"评估节流={EVAL_INTERVAL_MS}ms 来源={K.allowed_sources()}")
     srv.serve_forever()
     return 0
 

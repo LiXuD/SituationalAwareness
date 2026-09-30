@@ -33,6 +33,7 @@ SCHEMA = {
     "POSTGRES_DB": (False, "ssp", "PostgreSQL 库名"),
     "POSTGRES_PORT": (False, "5433", "PostgreSQL 宿主端口"),
     "SSP_IMAGE_TAG": (False, "2026.09", "自建镜像（portal/soar）版本 tag"),
+    "LOG_LEVEL": (False, "INFO", "各服务日志级别（DEBUG/INFO/WARNING/ERROR）"),
 }
 
 
