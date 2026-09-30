@@ -2,15 +2,15 @@
 
 > **用途**：新会话 / 新 agent / 新成员 / 其他机器的**第一份读物**。读完这一份即可掌握项目全貌，不必先读 14 份技术方案。
 > **维护**：**每完成一项任务/迭代即更新本文件**（用户明确约定）；本文件是"项目共享真相源"，优先于任何会话内的临时记忆。
-> **最后更新**：2026-09-30（P2 ①② 完成：ruff+PR gate、统一 health/metrics）
+> **最后更新**：2026-09-30（P2 ③ 完成：镜像漏洞扫描 trivy）
 
 ---
 
 ## 0. 一句话
 
 面向 **x86 私有化**的轻量安全态势感知平台（POC 阶段），已完成 **I-01~I-15** 全部迭代并实测
-（`make verify` 21/21）；**工程化改造 P0/P1 全部完成、P2 完成 2/4**（ruff+本地 PR gate、统一 health/metrics），
-余 P2 安全认证与镜像漏洞扫描待推进。
+（`make verify` 21/21）；**工程化改造 P0/P1 全部完成、P2 完成 3/4**（ruff+本地 PR gate、统一 health/metrics、镜像漏洞扫描），
+余 P2「安全认证」（Kafka SASL / OpenSearch security）待推进。
 
 ---
 
@@ -141,7 +141,14 @@ portal 另提供 Prometheus 文本格式 `GET :8093/metrics`；`make health` 汇
 - **P2（观测/安全）进行中 2/4**：✅ Python 静态检查 **ruff**（`ruff.toml` 克制规则集 + `scripts/lint-ruff.sh`，
   未装则跳过）+ `make lint/gate/ci` 即**本地 PR gate**；✅ **统一 health/metrics**（各服务 `/health` 统一信封
   `status/service/version/uptime_s`；portal 增 Prometheus 文本 `/metrics`；`make health` 汇总成一张表）。
-  ⏳ 待做：**安全认证**（Kafka SASL / OpenSearch security）、**镜像漏洞扫描**（trivy/grype）。
+  **统一 health/metrics**（各服务 `/health` 统一信封 `status/service/version/uptime_s`；portal 增 Prometheus 文本 `/metrics`；
+  `make health` 汇总成一张表）；✅ **镜像漏洞扫描**（`make scan`，trivy dev 侧；报告落 `reports/`；
+  详见 [`系统文件/镜像安全扫描.md`](系统文件/镜像安全扫描.md)）。
+  ⏳ 待做：**安全认证**（Kafka SASL / OpenSearch security）——**会改部署形态**，建议单独排期。
+
+**镜像安全基线（2026-09-30）**：11 镜像合计 **69 CRITICAL / 1298 HIGH**；自建镜像**不引入风险**
+（`ssp-portal` 0C/47H 与基础镜像 `python:3.12-slim` 完全一致；`ssp-soar` 基于 `alpine:3.20` 为 0C/0H）；
+风险集中在 4 个重栈镜像（opensearch/dashboards/arkime/logstash 占 61/69 CRITICAL）→ **升级它们收益最大**。
 - **总原则**：保持「纯标准库 + 少量 dev 侧工具」定位，不引 k8s/Flink/重量观测栈；每项改动必须经 `make verify` 实测。
 
 ---
@@ -156,6 +163,7 @@ portal 另提供 Prometheus 文本格式 `GET :8093/metrics`；`make health` 汇
 | ECS 字段映射 | 资料库 `技术方案/` | `JrndPbPfvoRs` |
 | 平台技术问答 FAQ | 资料库 `技术方案/` | `JqYKCypXGHdW` |
 | 资产库使用指南 | 资料库 `系统文件/` | `JcCytangqOwN`（已由根目录移入） |
+| 镜像安全扫描（方法与基线） | 仓库 `docs/系统文件/` | `镜像安全扫描.md` |
 | 项目事项 | wb-issues | I-01~I-15（**全部 done**） |
 | 本机项目记忆 | `.workbuddy/memory/`（**不进 git**） | `MEMORY.md` + 每日日志 |
 
@@ -191,6 +199,7 @@ make gate        # 提交前快速门禁（lint + 单元测试 + 口令扫描 + 
 make ci          # 全量门禁（gate + verify，合并/推送前）
 make test        # 单元测试（tests/，纯标准库 unittest）
 make check-env   # 校验 deploy/.env 与模板是否符合 schema
+make scan        # 镜像漏洞扫描（trivy，dev 侧；报告落 reports/）
 make hooks       # 安装 git pre-commit 钩子
 make health      # 统一健康巡检（各服务 /health 汇总表）
 make health      # 各服务健康
