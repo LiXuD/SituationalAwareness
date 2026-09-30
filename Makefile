@@ -12,7 +12,7 @@ PY := python3
 .DEFAULT_GOAL := help
 
 .PHONY: help init env up down ps logs templates demo verify health clean build \
-        pg-up pg-init pg-portal pg-stop lint test gate ci hooks check-env discover discovery-status \
+        pg-up pg-init pg-portal pg-stop lint test scan gate ci hooks check-env discover discovery-status \
         branch-demo branch-status branch-down branch-up \
         stream-status stream-demo external-up external-down external-demo external-reset
 
@@ -133,6 +133,9 @@ lint: ## 语法 + 静态检查（Python: ruff+编译 / shell / 前端 JS）
 
 test: ## 单元测试（纯标准库 unittest，秒级）
 	$(PY) -m unittest discover -s tests
+
+scan: ## 镜像漏洞扫描（trivy，dev 侧；未装 trivy 则跳过；报告落 reports/）
+	@$(PY) scripts/scan-images.py
 
 check-env: ## 校验运行时配置 deploy/.env 与模板是否符合 schema
 	$(PY) scripts/check-env.py

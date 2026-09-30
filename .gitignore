@@ -27,3 +27,6 @@ scripts/.cache/
 
 # 平台业务数据库（SQLite 运行时数据，由 scripts/init-db.py 生成，不入库）
 data/
+
+# 安全/质量扫描报告（trivy 等，dev 侧产物）
+reports/

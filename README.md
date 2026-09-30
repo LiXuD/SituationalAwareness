@@ -64,9 +64,11 @@ make hooks         # 一次性：安装 git pre-commit 钩子（提交前自动�
 make gate          # 快速门禁（秒级）：编译+ruff+shell+JS 语法 + 单元测试 + 口令扫描 + 配置模板校验
 make ci            # 全量门禁（约 2 分钟，会重置演示数据）：gate + 端到端验收 —— 合并/推送前手动跑
 make check-env     # 校验 deploy/.env 与模板是否符合 schema
+make scan          # 镜像漏洞扫描（trivy）：扫 compose 全部镜像 + 自建镜像，报告落 reports/
 ```
 `git commit --no-verify` 可临时跳过钩子（应尽量避免）。
-静态检查依赖 **ruff**（dev 侧工具，非交付依赖）：`brew install ruff` 或 `pip install ruff`；未安装时该项自动跳过。
+静态检查/漏洞扫描依赖 **dev 侧工具，非交付依赖**：`ruff`（`brew install ruff`）与 `trivy`（`brew install trivy`）；
+未安装时对应项自动跳过。镜像扫描默认**只报告**，要"发现即失败"用 `SCAN_FAIL_ON=CRITICAL make scan`。
 
 分支相关（I-13）：
 ```bash
